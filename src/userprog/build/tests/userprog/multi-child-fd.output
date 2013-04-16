@@ -1,0 +1,51 @@
+-v -k -T 60 --b --filesys-size=2 -p tests/userprog/multi-child-fd -a multi-child-fd -p ../../tests/userprog/sample.txt -a sample.txt -p tests/userprog/child-close -a child-close -- -q -f run multi-child-fd 
+ later : -v -k -T 60 --b --filesys-size=2 -p tests/userprog/multi-child-fd -a multi-child-fd -p ../../tests/userprog/sample.txt -a sample.txt -p tests/userprog/child-close -a child-close  
+ GDB OP : noneCopying tests/userprog/multi-child-fd to scratch partition...
+Copying ../../tests/userprog/sample.txt to scratch partition...
+Copying tests/userprog/child-close to scratch partition...
+squish-pty bochs-gdb -q
+========================================================================
+                       Bochs x86 Emulator 2.4.5
+              Build from CVS snapshot, on April 25, 2010
+========================================================================
+PiLo hda2
+Loading.................
+Kernel command line: -q -f extract run multi-child-fd
+Pintos booting with 4,096 kB RAM...
+383 pages available in kernel pool.
+383 pages available in user pool.
+Calibrating timer...  102,400 loops/s.
+Initializing EHCI
+Initializing UHCI
+hda: 5,040 sectors (2 MB), model "BXHD00011", serial "Generic 1234"
+hda1: 280 sectors (140 kB), Pintos OS kernel (20)
+hda2: 4,096 sectors (2 MB), Pintos file system (21)
+hda3: 178 sectors (89 kB), Pintos scratch (22)
+filesys: using hda2
+scratch: using hda3
+Formatting file system...done.
+Boot complete.
+Extracting ustar archive from hda3 into file system...
+Putting 'multi-child-fd' into the file system...
+Putting 'sample.txt' into the file system...
+Putting 'child-close' into the file system...
+Erasing ustar archive...
+Executing 'multi-child-fd':
+(multi-child-fd) begin
+(multi-child-fd) open "sample.txt"
+(child-close) begin
+(child-close) end
+child-close: exit(0)
+(multi-child-fd) wait(exec()) = 0
+(multi-child-fd) verified contents of "sample.txt"
+(multi-child-fd) end
+multi-child-fd: exit(0)
+Execution of 'multi-child-fd' complete.
+Timer: 822 ticks
+Thread: 0 idle ticks, 651 kernel ticks, 176 user ticks
+hda2 (filesys): 167 reads, 364 writes
+hda3 (scratch): 177 reads, 2 writes
+Console: 1219 characters output
+Keyboard: 0 keys pressed
+Exception: 0 page faults
+Powering off...

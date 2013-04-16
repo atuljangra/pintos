@@ -1,0 +1,101 @@
+-v -k -T 60 --b --filesys-size=2 -p tests/userprog/multi-recurse -a multi-recurse -- -q -f run multi-recurse 15 
+ later : -v -k -T 60 --b --filesys-size=2 -p tests/userprog/multi-recurse -a multi-recurse  
+ GDB OP : noneCopying tests/userprog/multi-recurse to scratch partition...
+squish-pty bochs-gdb -q
+========================================================================
+                       Bochs x86 Emulator 2.4.5
+              Build from CVS snapshot, on April 25, 2010
+========================================================================
+PiLo hda2
+Loading.................
+Kernel command line: -q -f extract run 'multi-recurse 15'
+Pintos booting with 4,096 kB RAM...
+383 pages available in kernel pool.
+383 pages available in user pool.
+Calibrating timer...  102,400 loops/s.
+Initializing EHCI
+Initializing UHCI
+hda: 5,040 sectors (2 MB), model "BXHD00011", serial "Generic 1234"
+hda1: 280 sectors (140 kB), Pintos OS kernel (20)
+hda2: 4,096 sectors (2 MB), Pintos file system (21)
+hda3: 93 sectors (46 kB), Pintos scratch (22)
+filesys: using hda2
+scratch: using hda3
+Formatting file system...done.
+Boot complete.
+Extracting ustar archive from hda3 into file system...
+Putting 'multi-recurse' into the file system...
+Erasing ustar archive...
+Executing 'multi-recurse 15':
+(multi-recurse) begin 15
+(multi-recurse) exec("multi-recurse 14")
+(multi-recurse) begin 14
+(multi-recurse) exec("multi-recurse 13")
+(multi-recurse) begin 13
+(multi-recurse) exec("multi-recurse 12")
+(multi-recurse) begin 12
+(multi-recurse) exec("multi-recurse 11")
+(multi-recurse) begin 11
+(multi-recurse) exec("multi-recurse 10")
+(multi-recurse) begin 10
+(multi-recurse) exec("multi-recurse 9")
+(multi-recurse) begin 9
+(multi-recurse) exec("multi-recurse 8")
+(multi-recurse) begin 8
+(multi-recurse) exec("multi-recurse 7")
+(multi-recurse) begin 7
+(multi-recurse) exec("multi-recurse 6")
+(multi-recurse) begin 6
+(multi-recurse) exec("multi-recurse 5")
+(multi-recurse) begin 5
+(multi-recurse) exec("multi-recurse 4")
+(multi-recurse) begin 4
+(multi-recurse) exec("multi-recurse 3")
+(multi-recurse) begin 3
+(multi-recurse) exec("multi-recurse 2")
+(multi-recurse) begin 2
+(multi-recurse) exec("multi-recurse 1")
+(multi-recurse) begin 1
+(multi-recurse) exec("multi-recurse 0")
+(multi-recurse) begin 0
+(multi-recurse) end 0
+multi-recurse: exit(0)
+(multi-recurse) end 1
+multi-recurse: exit(1)
+(multi-recurse) end 2
+multi-recurse: exit(2)
+(multi-recurse) end 3
+multi-recurse: exit(3)
+(multi-recurse) end 4
+multi-recurse: exit(4)
+(multi-recurse) end 5
+multi-recurse: exit(5)
+(multi-recurse) end 6
+multi-recurse: exit(6)
+(multi-recurse) end 7
+multi-recurse: exit(7)
+(multi-recurse) end 8
+multi-recurse: exit(8)
+(multi-recurse) end 9
+multi-recurse: exit(9)
+(multi-recurse) end 10
+multi-recurse: exit(10)
+(multi-recurse) end 11
+multi-recurse: exit(11)
+(multi-recurse) end 12
+multi-recurse: exit(12)
+(multi-recurse) end 13
+multi-recurse: exit(13)
+(multi-recurse) end 14
+multi-recurse: exit(14)
+(multi-recurse) end 15
+multi-recurse: exit(15)
+Execution of 'multi-recurse 15' complete.
+Timer: 2642 ticks
+Thread: 0 idle ticks, 1185 kernel ticks, 1461 user ticks
+hda2 (filesys): 731 reads, 190 writes
+hda3 (scratch): 92 reads, 2 writes
+Console: 2616 characters output
+Keyboard: 0 keys pressed
+Exception: 0 page faults
+Powering off...

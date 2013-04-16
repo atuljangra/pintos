@@ -1,0 +1,41 @@
+-v -k -T 60 --b --filesys-size=2 -p tests/userprog/open-missing -a open-missing -- -q -f run open-missing 
+ later : -v -k -T 60 --b --filesys-size=2 -p tests/userprog/open-missing -a open-missing  
+ GDB OP : noneCopying tests/userprog/open-missing to scratch partition...
+squish-pty bochs-gdb -q
+========================================================================
+                       Bochs x86 Emulator 2.4.5
+              Build from CVS snapshot, on April 25, 2010
+========================================================================
+PiLo hda2
+Loading.................
+Kernel command line: -q -f extract run open-missing
+Pintos booting with 4,096 kB RAM...
+383 pages available in kernel pool.
+383 pages available in user pool.
+Calibrating timer...  102,400 loops/s.
+Initializing EHCI
+Initializing UHCI
+hda: 5,040 sectors (2 MB), model "BXHD00011", serial "Generic 1234"
+hda1: 280 sectors (140 kB), Pintos OS kernel (20)
+hda2: 4,096 sectors (2 MB), Pintos file system (21)
+hda3: 84 sectors (42 kB), Pintos scratch (22)
+filesys: using hda2
+scratch: using hda3
+Formatting file system...done.
+Boot complete.
+Extracting ustar archive from hda3 into file system...
+Putting 'open-missing' into the file system...
+Erasing ustar archive...
+Executing 'open-missing':
+(open-missing) begin
+(open-missing) end
+open-missing: exit(0)
+Execution of 'open-missing' complete.
+Timer: 484 ticks
+Thread: 0 idle ticks, 404 kernel ticks, 84 user ticks
+hda2 (filesys): 80 reads, 172 writes
+hda3 (scratch): 83 reads, 2 writes
+Console: 931 characters output
+Keyboard: 0 keys pressed
+Exception: 0 page faults
+Powering off...

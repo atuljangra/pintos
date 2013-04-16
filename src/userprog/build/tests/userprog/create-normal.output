@@ -1,0 +1,42 @@
+-v -k -T 60 --b --filesys-size=2 -p tests/userprog/create-normal -a create-normal -- -q -f run create-normal 
+ later : -v -k -T 60 --b --filesys-size=2 -p tests/userprog/create-normal -a create-normal  
+ GDB OP : noneCopying tests/userprog/create-normal to scratch partition...
+squish-pty bochs-gdb -q
+========================================================================
+                       Bochs x86 Emulator 2.4.5
+              Build from CVS snapshot, on April 25, 2010
+========================================================================
+PiLo hda2
+Loading.................
+Kernel command line: -q -f extract run create-normal
+Pintos booting with 4,096 kB RAM...
+383 pages available in kernel pool.
+383 pages available in user pool.
+Calibrating timer...  102,400 loops/s.
+Initializing EHCI
+Initializing UHCI
+hda: 5,040 sectors (2 MB), model "BXHD00011", serial "Generic 1234"
+hda1: 280 sectors (140 kB), Pintos OS kernel (20)
+hda2: 4,096 sectors (2 MB), Pintos file system (21)
+hda3: 84 sectors (42 kB), Pintos scratch (22)
+filesys: using hda2
+scratch: using hda3
+Formatting file system...done.
+Boot complete.
+Extracting ustar archive from hda3 into file system...
+Putting 'create-normal' into the file system...
+Erasing ustar archive...
+Executing 'create-normal':
+(create-normal) begin
+(create-normal) create quux.dat
+(create-normal) end
+create-normal: exit(0)
+Execution of 'create-normal' complete.
+Timer: 499 ticks
+Thread: 0 idle ticks, 407 kernel ticks, 96 user ticks
+hda2 (filesys): 83 reads, 176 writes
+hda3 (scratch): 83 reads, 2 writes
+Console: 970 characters output
+Keyboard: 0 keys pressed
+Exception: 0 page faults
+Powering off...

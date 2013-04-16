@@ -1,0 +1,425 @@
+		     +--------------------------+
+       	 |		       CSL373		      |
+		     | PROJECT 2: USER PROGRAMS	|
+		     | 	   DESIGN DOCUMENT     	|
+		     +--------------------------+
+
+---- GROUP ----
+
+>> Fill in the names and email addresses of your group members.
+
+Rishabh Jain (cs1100241@cse.iitd.ernet.in)
+Atul Jangra (cs5100277@cse.iitd.ernet.in)
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+We have tested the code on Ubuntu 12.04's native GCC compiler, and also by
+installing the gcc veriosn that is given on course webpage.
+We've wrote the general code. If the compiler is behaving abruptly
+then the code may fail. Namely errors may occur while extracting arguments
+from interrupt frame.
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+Tutorials listed on home page of Sorav Bansal.
+
+          ARGUMENT PASSING
+          ================
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+For implementing argument passing, we have not used/changed any struct.
+We are using two char ** variables, which are allocated a page and then
+freed afterwards.
+
+/* Buffer for saving the parsed tokens from the command/file_name */ 
+char **argv;
+
+
+---- ALGORITHMS ----
+
+>> A2: Briefly describe how you implemented argument parsing.  How do
+>> you arrange for the elements of argv[] to be in the right order?
+>> How do you avoid overflowing the stack page?
+
+Algorithm:
+- Initially we parse the passed command into a char ** ARGV which contains
+all the arguments and file name. All this parsing is done in
+    char **create_args(char *file_name)
+function.
+- In start_process function, we get the top of stack pointer by calling
+the load function as follows:
+  success = load (thread_current(), argv[0], &if_.eip, &if_.esp);
+This gives us the top of stack, namely esp. This esp is used to setup the
+stack for argument passing.
+- Now we push all the arguments from ARGV to the stack and note the esp
+  where we are storing them.
+- Word aligning. Initially we are not pushing the arguments aligned
+  because aligned arguments will indroduce redundancy.
+- Now we add the null pointer sentinel.
+- Now we add the previously stored addresses of the arguments which were
+earlier pushed. By doing this we can access the arguments by pointers.
+- Now push the address of the previous load_addr(esp).
+- After this, we push the number of arguments on the stack.
+- Then we push a fake return address onto the stack.
+
+argv[] in right order:
+By following the above algorithm, we can state that the arguments will
+always be pushed correctly on the stack.
+
+Handling overflow:
+Question itself states a limitation of 128 bytes of arguments. In our
+implementation, we have allocated a whole page for the parsing of arguments.
+This will deal with the limitation provided. Also if we try to increase the
+argument size, then the function will work properly if the argument size
+is less that 4096 bytes. If size is greater than 4096, then stack won't
+be initialised properly and will result in process termination.
+
+---- RATIONALE ----
+
+>> A3: Why does Pintos implement strtok_r() but not strtok()?
+The  strtok_r()  function  is  a reentrant version of strtok().  The
+third argument is a pointer to a char * variable that is used internally
+by strtok_r() in order to maintain context between successive  calls
+that parse the same string. Thus strtok_r is provided so that we can
+maintain the string. In case of strtok(), the string is getting consumed.
+
+>> A4: In Pintos, the kernel separates commands into a executable name
+>> and arguments.  In Unix-like systems, the shell does this
+>> separation.  Identify at least two advantages of the Unix approach.
+- Security:
+  By doing the parsing and arguments separation in shell, we are protecting
+  the kernel from bad inputs which may give result in bad kernel behavior.
+- Minimal Kernel:
+  Each operating system wants to achieve a minimal kernel. By reducing the
+  load of parsing the command into executable name and arguments, we are
+  moving towards a minimal kernel.
+
+            SYSTEM CALLS
+            ============
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+Modified:
+struct thread
+  {
+    /* Owned by thread.c. */
+    tid_t tid;                          /* Thread identifier. */
+    tid_t parent;                       /* Parent's identifier */
+    enum thread_status status;          /* Thread state. */
+    char name[16];                      /* Name (for debugging purposes). */
+    uint8_t *stack;                     /* Saved stack pointer. */
+    int priority;                       /* Priority. */
+    struct list_elem allelem;           /* List element for all threads list. */
+    
+    /* Shared between thread.c and synch.c. */
+    struct list_elem elem;              /* List element. */
+
+#ifdef USERPROG
+    /* Owned by userprog/process.c. */
+    uint32_t *pagedir;                  /* Page directory. */
+    struct list * fd_table;             /* fd table list pointer*/
+    struct bitmap *fd_entry;            /* keep record of used fd*/
+    struct file * current_executable;   /* currently executing file*/
+
+    bool fd_std_in;                     /* boolean to keep */
+    bool fd_std_out;                    /* track of console*/
+    bool fd_std_err;                    /* IO */
+#endif
+    int exit_code;                      /* Exit code. */
+    /* Owned by thread.c. */
+    unsigned magic;                     /* Detects stack overflow. */
+  };
+
+/* structure with minimum information needed at exit*/
+struct exit_thread
+{
+  tid_t tid;
+  tid_t parent;
+  struct list_elem elem;    /* List element for dead processes list */
+  int exit_code;            /* Exit code set by on thread exit */
+};
+
+/* structure for fd table element */
+/* doubly linked list with list_elem as hanger*/
+struct fd_table_element
+{
+  struct file *file_name;
+  unsigned fd;
+  struct list_elem file_elem;            /* hanger of list */
+};
+
+
+This struct is used to 
+>> B2: Describe how file descriptors are associated with open files.
+>> Are file descriptors unique within the entire OS or just within a
+>> single process?
+File descriptors are unique within a single process. We have made
+fd_table an attribute of thread structure. Thus file descriptors are
+associated with specific threads, and thus in case processes.
+For each open file, say file_name, we have a corresponding
+fd_table_element struct. LIST_ELEM in this struct forms a linked list.
+Thus we have a linked list of open files.
+Now we have another struct called FD_ENTRY inside thread structure. This
+structure is responsible for maintaining the record of used/unused file
+descriptors.Currently the size of FD_ENTRY is predecided, but it can be
+modified to include any number of file descriptors. Currently the scheme
+is using 1 bit per file descriptors. This heavily reduces the space cost
+per fd. Currently the code supports opening 500 files per process at the
+cost of one bit space in process stack ( thread structure ).
+
+---- ALGORITHMS ----
+
+>> B3: Describe your code for reading and writing user data from the
+>> kernel.
+   When reading or writing user data from the kernel we DO NOT create a
+   new kernel page for the buffer that would be passed to the kernel
+   functions. Instead we check if the buffer is correct i.e. is it safe
+   to read or write to the memory location provided to us as an argument
+   to the sysem call. This is done by checking if the pages from BUFFER
+   to BUFFER+LENGTH are present in the current thread's virtual memory
+   or not. If not then we simply kill the thread otherwise we declare
+   that it is safe to pass the pointer in user space to the kernel
+   funtions.
+    
+>> B4: Suppose a system call causes a full page (4,096 bytes) of data
+>> to be copied from user space into the kernel.  What is the least
+>> and the greatest possible number of inspections of the page table
+>> (e.g. calls to pagedir_get_page()) that might result?  What about
+>> for a system call that only copies 2 bytes of data?  Is there room
+>> for improvement in these numbers, and how much?
+    First of all we do not copy data from user space to kernel space.
+    We bypass the copying just by checking if the pages from BUFFER
+    to BUFFER+LENGTH are user accessible or not. If yes, it is
+    completely safe to pass the BUFFER pointer(which is pointing to a
+    memory location is user space) to our kernel functions. The checking
+    is done at memory locations differing by 4,096 bytes. Therefore, for
+    a buffer of size 4,096 bytes we would have to make at least one
+    inspections and at max 2 inspections(if the buffer was not 4K
+    aligned). The checking is also made efficient by handling page
+    faults instead of manually walking the page table. In our
+    implementation if buffer length is only two bytes even then only two
+    inspections are done at max. This is a huge improvement over other
+    implementations such as creating a new kernel page for buffer and
+    copying data over to buffer again once we are done.
+
+>> B5: Briefly describe your implementation of the "wait" system call
+>> and how it interacts with process termination.
+Wait system call disables the interrupts and iterates throught the
+all threads list. If the child is found, parent is put to sleep using
+thread_yield() when the parent wakes up it iterates through the list
+again. Say if the child is not found this time in the all threads list,
+then the parent iterates thought the dead threads list to find its
+child. If found it removes the child from the dead threads list and
+returns the exit code. If the child was not found even in the dead
+threads list it is safe to say that the children we are looking for
+was either never created or that its parent has already called wait on
+it.   
+
+>> B6: Any access to user program memory at a user-specified address
+>> can fail due to a bad pointer value.  Such accesses must cause the
+>> process to be terminated.  System calls are fraught with such
+>> accesses, e.g. a "write" system call requires reading the system
+>> call number from the user stack, then each of the call's three
+>> arguments, then an arbitrary amount of user memory, and any of
+>> these can fail at any point.  This poses a design and
+>> error-handling problem: how do you best avoid obscuring the primary
+>> function of code in a morass of error-handling?  Furthermore, when
+>> an error is detected, how do you ensure that all temporarily
+>> allocated resources (locks, buffers, etc.) are freed?  In a few
+>> paragraphs, describe the strategy or strategies you adopted for
+>> managing these issues.  Give an example.
+  We will explain the design and error handling mechanism with the exmaple
+  of read system call.
+  In read, arguments are as follows:
+  int read (int fd, void* buffer, unsigned length)
+  When we are passing the arguments to this function in syscall_handler,
+  the argument passed are verified by get_user function. This confirms
+  that the pointers that are being passed to READ are user accessible.
+  Till now, only POINTERS are verified to be error free.
+  After that, when we are in READ function, we still need to verifiy
+  the fd, and buffer.
+  Fd is valid if fd >=0 and file correcponding to fd exixts. Code is
+  given below.
+
+  int read (int fd, void* buffer, unsigned length)
+{
+  while(!lock_try_acquire(&file_lock))
+    thread_yield();
+  int result = 0;
+  if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out)  /* fd validity*/
+      || (fd == 2 && thread_current() -> fd_std_err))
+  {
+    result = -1;
+    goto done;
+  }
+  bool valid;
+  valid = validate_buffer (buffer, NULL, length);
+  if (!valid)
+  {
+    lock_release (&file_lock);
+    thread_exit (-1);
+    NOT_REACHED ();
+  }
+  /* read from console */
+  if (fd == STDIN_FILENO && thread_current() -> fd_std_in)
+  {
+    unsigned i = 0;
+    while (i < length)
+      *(uint8_t *)(buffer + i) = input_getc();
+    result = length;
+    goto done;
+  }
+  struct fd_table_element *fd_elem = find_file (fd);
+  if (fd_elem == NULL)  /* do we have a file corresponding to fd FD? */
+    goto done;
+  struct file * read = fd_elem -> file_name;
+  if (read == NULL)
+  {
+      result = -1;
+      goto done;
+  }
+  result = file_read (read, buffer, length);
+
+  done:
+    lock_release(&file_lock);
+  return result;
+}
+
+To validate the buffer, we need to check the whole of buffer, from
+BUFFER to BUFFER+LENGTH. A buffer is valid if the pages it spans are all
+valid for user. To calculate this validity, we have created a new
+function as below:
+
+/* Checks whether the virtual memory from buffer(included) to
+ *  BUFFER+MAX_LEN(excluded) is accessible by the current thread
+ *  or not. If a terminator is found before BUFFER+MAX_LEN then
+ *  the mapping is checked only upto the first terminator,
+ *  including the terminator. If terminator is not found than false
+ *  is returned. If the terminator was NULL then mapping is checked
+ *  upto BUFFER+MAX_LEN */ 
+ bool validate_buffer (const char *buffer, char *terminator, int max_len);
+
+This functions return a bool which tells us about the validity of buffer.
+
+When some error occurs we are ensuring that all the locks and extra
+memory is being free. Whenever we are returing from READ, we release the
+lock and free any other memory that is being used.
+
+To keep the code simple and clean, we are handling the page_faults or
+any illegal memory access outside the syscalls in exception.c.
+
+---- SYNCHRONIZATION ----
+>> B7: The "exec" system call returns -1 if loading the new executable
+>> fails, so it cannot return before the new executable has completed
+>> loading.  How does your code ensure this?  How is the load
+>> success/failure status passed back to the thread that calls "exec"?
+
+Created a new method in process.c which creates a new thread in blocked
+state for the file name to be execed and loads its executable in the new
+thread's virtual memory. This was acheived by modifying the load
+function to take an extra argument:(struct thread *t) so that the load
+function copies the executable in thread T's virtual memory. After the
+file has been loaded the thread T is unbloked. Since everything uptill
+now is sequential and the load function has returned us the load status
+therefore the exec status can be sent back to the system call:exec using
+a simple (return exec_status;) statement.
+
+>> B8: Consider parent process P with child process C.  How do you
+>> ensure proper synchronization and avoid race conditions when P
+>> calls wait(C) before C exits?  After C exits?  How do you ensure
+>> that all resources are freed in each case?  How about when P
+>> terminates without waiting, before C exits?  After C exits?  Are
+>> there any special cases?
+
+When child C is alive and parent P calls wait on it then kernel calls
+thread_yield() and puts P to sleep. When P is scheduled again it loops
+and check's if C is still alive by interating thought all thread's list.
+After thread C exits it removes itself from all thread's list and
+creates a new structure with minimum information:EXIT_THREAD such as its
+pid, its parents pid and its exit code and add it to dead threads list.
+After some time P will be scheduled and it will iterate through all
+thread's list only to find out that C is no longer present in the list.
+Now P will iterate through dead threads list to check if C is dead or
+not. If found dead it will read its exit status and remove it from the
+dead threads list.
+When C is alive P is simply being put to sleep therefore there are no
+resources to be freed. When C dies its thread page and virtual memory
+are forfeited and only EXIT_THREAD is left behind which too
+gets cleaned up once the P calls wait on C.
+If P terminates without waiting for C, nothing is done at that time.
+Instead when C exits we check whether P ( parent of C) is alive or not.
+If P is dead, we simply avoid creating EXIT_THREAD for C. This handles
+this case.
+If P terminates after C exits, we remove all the EXIT_THREAD from that
+thread's list who are children of P(C and it's siblings).
+All the special case are handled within the same loop.
+
+---- RATIONALE ----
+
+>> B9: Why did you choose to implement access to user memory from the
+>> kernel in the way that you did?
+We chose to implement access to user memory by using the second method
+i.e. by handling the exception generated by due to page fault in system
+call handler. We did this because everytime walking through the page
+directory at software level is many times slower than the walking done
+by the processor at hardware level.      
+
+>> B10: What advantages or disadvantages can you see to your design
+>> for file descriptors?
+- Advantages:
+  1. Uses minimal thread structure, thus leaving more space for the
+     process.
+  2. Every thread has it's own FD_TABLE and FD_ENTRY. Each entry has it's
+  own file structure and fd. It's very simple to get file from fd or vice
+  versa.
+  3. Cost of extensibilty is really low. Each file descriptors element
+  correspond to one bit of thread structure.
+- Disadvantages:
+  1. Unlimited file descriptors are still not implemented due to lack of
+  time. This is simple, and will be implemented in next iteration of
+  project. 
+
+>> B11: The default tid_t to pid_t mapping is the identity mapping.
+>> If you changed it, what advantages are there to your approach?
+  If user process id and thread id are not one to one, then we can have a
+  process having multiple threads. This will be huge asset to the current
+  framework. Threads between a single process share the process resources.
+  Also context switching happens very fast in case of threads of a single
+  process.
+			   SURVEY QUESTIONS
+			   ================
+
+Answering these questions is optional, but it will help us improve the
+course in future quarters.  Feel free to tell us anything you
+want--these questions are just to spur your thoughts.  You may also
+choose to respond anonymously in the course evaluations at the end of
+the quarter.
+
+>> In your opinion, was this assignment, or any one of the three problems
+>> in it, too easy or too hard?  Did it take too long or too little time?
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+
+
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+
+
+>> Do you have any suggestions for the TAs to more effectively assist
+>> students, either for future quarters or the remaining projects?
+
+>> Any other comments?
+Thanks for making us do this assignment. This was real fun.
