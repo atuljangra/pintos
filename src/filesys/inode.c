@@ -307,6 +307,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
   if (inode->deny_write_cnt)
     return 0;
+  
+  if(inode_length(inode) < offset + size)
+    (inode->data).length = offset + size;
 
   while (size > 0) 
     {
