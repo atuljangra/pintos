@@ -2,6 +2,8 @@
 //2732
 #include <bitmap.h>
 #include <debug.h>
+#include <string.h>
+#include "threads/malloc.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
@@ -20,13 +22,15 @@ free_map_init (void)
   bitmap_mark (free_map, ROOT_DIR_SECTOR);
 }
 
-/* Allocates CNT consecutive sectors from the free map and stores
-   the first into *SECTORP.
+/* Allocates 1 sectors from the free map and stores
+   the first into *SECTORP. Also it zeros out the block allocated
    Returns true if successful, false if all sectors were
    available. */
 bool
 free_map_allocate (size_t cnt, block_sector_t *sectorp)
 {
+  ASSERT(cnt == 1);
+  //void *zeros = malloc(BLOCK_SECTOR_SIZE);
   block_sector_t sector = bitmap_scan_and_flip (free_map, 0, cnt, false);
   if (sector != BITMAP_ERROR
       && free_map_file != NULL
@@ -35,8 +39,12 @@ free_map_allocate (size_t cnt, block_sector_t *sectorp)
       bitmap_set_multiple (free_map, sector, cnt, false); 
       sector = BITMAP_ERROR;
     }
-  if (sector != BITMAP_ERROR)
+  if (sector != BITMAP_ERROR){
+    //memset(zeros,0,BLOCK_SECTOR_SIZE);
+    //block_write(fs_device,sector,zeros);
     *sectorp = sector;
+  }
+  //free(zeros);
   return sector != BITMAP_ERROR;
 }
 

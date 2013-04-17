@@ -4,12 +4,21 @@
 #include <debug.h>
 #include <round.h>
 #include <string.h>
+#include <stdio.h>
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
+
+#define NDIRECT 128-3-2
+#define NINDIRECT (BLOCK_SECTOR_SIZE / sizeof(uint32_t))
+#define NDINDIRECT NINDIRECT*NINDIRECT
+#define MAXFILE (NDIRECT + NINDIRECT)
+
+static uint32_t
+find_block(struct inode *inode, uint32_t file_sector);
 
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
@@ -18,7 +27,7 @@ struct inode_disk
     block_sector_t start;               /* First data sector. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    uint32_t unused[125];               /* Not used. */
+    block_sector_t addrs[NDIRECT+2];              
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -40,16 +49,18 @@ struct inode
     struct inode_disk data;             /* Inode content. */
   };
 
+
+
 /* Returns the block device sector that contains byte offset POS
    within INODE.
    Returns -1 if INODE does not contain data for a byte at offset
    POS. */
 static block_sector_t
-byte_to_sector (const struct inode *inode, off_t pos) 
+byte_to_sector (struct inode *inode, off_t pos) 
 {
   ASSERT (inode != NULL);
   if (pos < inode->data.length)
-    return inode->data.start + pos / BLOCK_SECTOR_SIZE;
+    return find_block(inode, pos/BLOCK_SECTOR_SIZE);
   else
     return -1;
 }
@@ -73,22 +84,37 @@ inode_init (void)
 bool
 inode_create (block_sector_t sector, off_t length)
 {
-  struct inode_disk *disk_inode = NULL;
+  ASSERT (sizeof (struct inode_disk) == BLOCK_SECTOR_SIZE);
+  //printf("creating inode\n");
   bool success = false;
 
   ASSERT (length >= 0);
-
+  struct inode *inode = malloc(sizeof(struct inode));
+  memset(&inode->data,0,BLOCK_SECTOR_SIZE);
+  inode->sector = sector;
+  struct inode_disk *disk_inode = &inode->data;
   /* If this assertion fails, the inode structure is not exactly
      one sector in size, and you should fix that. */
-  ASSERT (sizeof *disk_inode == BLOCK_SECTOR_SIZE);
 
-  disk_inode = calloc (1, sizeof *disk_inode);
-  if (disk_inode != NULL)
+  uint32_t i;
+  size_t sectors;
+  uint32_t *sectors_allocated;
+  if (inode != NULL)
     {
-      size_t sectors = bytes_to_sectors (length);
+      sectors = bytes_to_sectors (length);
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
-      if (free_map_allocate (sectors, &disk_inode->start)) 
+      sectors_allocated = malloc((size_t)sectors*sizeof(uint32_t));
+      
+      //printf("sectors %d\n",sectors);
+      for(i=0; i<sectors; i++){
+        sectors_allocated[i] = find_block(inode, i);
+        //ASSERT((inode->data).addrs[i] == sectors_allocated[i]);
+        //printf("allocted sector %d\n",sectors_allocated[i]);
+        if(sectors_allocated[i] == (uint32_t)NULL)
+          goto invalid;
+      }
+      /*if (free_map_allocate (sectors, &disk_inode->start)) 
         {
           block_write (fs_device, sector, disk_inode);
           if (sectors > 0) 
@@ -100,10 +126,26 @@ inode_create (block_sector_t sector, off_t length)
                 block_write (fs_device, disk_inode->start + i, zeros);
             }
           success = true; 
-        } 
-      free (disk_inode);
+        } */
+      block_write (fs_device, sector, disk_inode);
+      success = true;
+      
     }
+  ASSERT(success);
+ // printf("creation done\n");
+  free (inode);
   return success;
+  
+  invalid:
+  //printf("unable to allocate\n");
+
+  for(i=0; i<sectors; i++){
+    if(sectors_allocated[i] == (uint32_t)NULL)
+      break;
+    free_map_release(sectors_allocated[i],1);
+  }
+  free(inode);
+  return false;
 }
 
 /* Reads an inode from SECTOR
@@ -343,4 +385,137 @@ off_t
 inode_length (const struct inode *inode)
 {
   return inode->data.length;
+}
+
+/* 
+  The contents (data) associated with each inode is stored
+  in a sequence of blocks on the disk.  The first NDIRECT blocks
+  are listed in ip->addrs[].  The next NINDIRECT blocks are 
+  listed in the block ip->addrs[NDIRECT] and the next doubly
+  indirect blocks are listed in ip->addrs[NDIRECT+1]
+
+  Return the disk block address of the nth block in inode ip.
+  If there is no such block, new block is allocated . This assumes 
+  that size of file is not less than the file_sector*sector_size */
+static uint32_t
+find_block(struct inode *ip, uint32_t file_sector)
+{
+  ASSERT((uint32_t)(ip->data).length > file_sector*BLOCK_SECTOR_SIZE);
+  
+  //printf("in find_block %d\n",file_sector);
+  
+  uint32_t addr, *buffer = malloc(BLOCK_SECTOR_SIZE);
+  struct inode_disk *inode = &ip->data;
+
+	//cprintf("block number required: %d\n", bn);
+  if(file_sector < NDIRECT){
+    if((int)inode->addrs[file_sector] == 0){
+			//printf("allocating bmap\n");
+      if(!free_map_allocate(1,&inode->addrs[file_sector])){
+        free(buffer);
+        return (uint32_t)NULL;
+      }
+      //printf("returning allocated sector %d\n",inode->addrs[file_sector]);
+      block_write(fs_device,ip->sector,inode);
+      
+      addr = inode->addrs[file_sector];
+      memset(buffer,0,BLOCK_SECTOR_SIZE);
+      block_write(fs_device,addr,buffer);
+		}	
+ 
+    free(buffer);
+    
+    return inode->addrs[file_sector] ;
+  }
+
+     
+  file_sector -= NDIRECT;
+
+  if(file_sector < NINDIRECT){
+    // Load indirect block, allocating if necessary.
+    if(inode->addrs[NDIRECT] == 0){
+      if(!free_map_allocate(1,&inode->addrs[NDIRECT])){
+        free(buffer);
+        return (uint32_t)NULL;
+      }
+      
+      block_write(fs_device,ip->sector,inode);
+      memset(buffer,0,BLOCK_SECTOR_SIZE);
+    }
+    else
+      block_read(fs_device, inode->addrs[NDIRECT], buffer);
+      
+    if(buffer[file_sector] == 0){
+      if(!free_map_allocate(1,&buffer[file_sector])){
+        free(buffer);
+        return (uint32_t)NULL;
+      }
+        
+      block_write(fs_device,inode->addrs[NDIRECT],buffer);
+      
+      addr = buffer[file_sector];
+      memset(buffer,0,BLOCK_SECTOR_SIZE);
+      block_write(fs_device,addr,buffer);
+    }
+    else
+      addr = buffer[file_sector];
+    //brelse(bp);
+ 
+    free(buffer);
+    return addr;
+  }
+  
+PANIC("NEVER SHOULD HAVE COME HERE");
+ 
+  
+  file_sector -= NINDIRECT;
+  
+  if(file_sector < NDINDIRECT){
+    if(inode->addrs[NDIRECT+1] == 0){
+      if(!free_map_allocate(1,&inode->addrs[NDIRECT+1])){
+        free(buffer);
+        return (uint32_t)NULL;
+      }
+      block_write(fs_device,ip->sector,inode);
+      memset(buffer,0,BLOCK_SECTOR_SIZE);
+    }
+    else
+      block_read(fs_device, inode->addrs[NDIRECT+1], buffer);
+    
+    uint32_t first_level = file_sector/NINDIRECT;
+    uint32_t second_level = file_sector%NINDIRECT;
+    
+  
+    if((addr=buffer[first_level]) == 0){
+      if(!free_map_allocate(1,&buffer[first_level])){
+        free(buffer);
+        return (uint32_t)NULL;
+      }
+      block_write(fs_device,inode->addrs[NDIRECT+1],buffer);
+      addr = buffer[first_level];
+      memset(buffer,0,BLOCK_SECTOR_SIZE);
+    }
+    else
+      block_read(fs_device, addr, buffer);
+      
+    
+    if(buffer[second_level] == 0){
+      if(!free_map_allocate(1,&buffer[second_level])){
+        free(buffer);
+        return (uint32_t)NULL;
+      }
+      block_write(fs_device,addr,buffer);
+      addr = buffer[second_level];
+      memset(buffer,0,BLOCK_SECTOR_SIZE);
+      block_write(fs_device,addr,buffer);
+    }
+    else
+      addr = buffer[second_level];
+
+    free(buffer);
+    return addr;
+  }
+  
+
+  PANIC("bmap: out of range");
 }
