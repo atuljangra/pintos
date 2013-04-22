@@ -3,6 +3,8 @@
 #include <debug.h>
 #include <stdio.h>
 #include <string.h>
+#include "threads/thread.h"
+#include "threads/malloc.h"
 #include "filesys/file.h"
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
@@ -27,7 +29,8 @@ filesys_init (bool format)
 
   if (format) 
     do_format ();
-
+  struct thread *cur = thread_current();
+  cur->cwd = dir_open_root ();
   free_map_open ();
 }
 
@@ -46,18 +49,37 @@ filesys_done (void)
 bool
 filesys_create (const char *name, off_t initial_size) 
 {
+
+  
   block_sector_t inode_sector = 0;
-  struct dir *dir = dir_open_root ();
-  bool success = (dir != NULL
+  char *path = malloc(strlen(name)+1);
+  char *temp1 = path;
+  char *x = malloc(strlen(name)+1);
+  char *temp2 = x;
+  memcpy(path,name,strlen(name)+1);
+  
+  struct inode *inode = parent_inode(path,x);
+  struct dir *dir = dir_open(inode);
+  bool success = false;
+  if(dir!=NULL && dir_isremoved(dir)){
+    success = false;
+    goto done;
+  }
+  
+  //struct dir *dir = dir_open_root ();
+  success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
-                  && inode_create (inode_sector, initial_size)
-                  && dir_add (dir, name, inode_sector));
+                  && inode_create (inode_sector, initial_size, T_FILE)
+                  && dir_add (dir, x, inode_sector));
  // printf("inode number %d\n",inode_sector);
   
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
-  dir_close (dir);
+  //dir_close (dir);
 //ASSERT(success);
+  done:
+  free(temp1);
+  free(temp2);
   return success;
 }
 
@@ -69,13 +91,35 @@ filesys_create (const char *name, off_t initial_size)
 struct file *
 filesys_open (const char *name)
 {
-  struct dir *dir = dir_open_root ();
+  //printf("opening file %s\n",name);
+  if(dir_isremoved(thread_current()->cwd)){
+    if(!memcmp(name,".",strlen(name)))
+      return NULL;
+    if(!memcmp(name,"..",strlen(name)))
+      return NULL;
+  }
+  char *path = malloc(strlen(name)+1);
+  char *temp = path;
+  memcpy(path,name,strlen(name)+1);
+  //printf("input file is %s\t%s\n",name,path);
+  //path[strlen] = '\0';
+ // ASSERT(dir!=NULL);
+  //struct dir *dir = dir_open_root ();
   struct inode *inode = NULL;
-  if (dir != NULL)
-    dir_lookup (dir, name, &inode);
-  dir_close (dir);
-	
-  return file_open (inode);
+  //if (dir != NULL)
+    //dir_lookup (dir, name, &inode);
+  //dir_close (dir);
+	inode = inode_name(path);
+
+    
+  
+  free(temp);
+  //ASSERT(inode != NULL);
+  struct file *file = file_open (inode);
+  if(file!=NULL && inode->data.type == T_DIR){
+    file_seek(file,2*direntry_size());
+  }
+  return file;
 }
 
 /* Deletes the file named NAME.
@@ -85,10 +129,21 @@ filesys_open (const char *name)
 bool
 filesys_remove (const char *name) 
 {
-  struct dir *dir = dir_open_root ();
-  bool success = dir != NULL && dir_remove (dir, name);
+  char *path = malloc(strlen(name)+1);
+  char *temp1 = path;
+  char *x = malloc(strlen(name)+1);
+  char *temp2 = x;
+  memcpy(path,name,strlen(name)+1);
+  
+  struct inode *inode = parent_inode(path,x);
+  struct dir *dir = dir_open(inode);
+  //struct dir *dir = dir_open_root ();
+  //printf("name is %s\n",x);
+  bool success = dir != NULL && dir_remove (dir, x);
   dir_close (dir); 
-
+  
+  free(temp1);
+  free(temp2);
   return success;
 }
 

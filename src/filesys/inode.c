@@ -1,6 +1,5 @@
 #include "filesys/inode.h"
 //6616
-#include <list.h>
 #include <debug.h>
 #include <round.h>
 #include <string.h>
@@ -9,26 +8,11 @@
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
 
-/* Identifies an inode. */
-#define INODE_MAGIC 0x494e4f44
 
-#define NDIRECT 128-3-2
-#define NINDIRECT (BLOCK_SECTOR_SIZE / sizeof(uint32_t))
-#define NDINDIRECT NINDIRECT*NINDIRECT
-#define MAXFILE (NDIRECT + NINDIRECT)
 
-static uint32_t
-find_block(struct inode *inode, uint32_t file_sector);
+static uint32_t find_block(struct inode *inode, uint32_t file_sector);
+static void free_inode_data(struct inode *ip);
 
-/* On-disk inode.
-   Must be exactly BLOCK_SECTOR_SIZE bytes long. */
-struct inode_disk
-  {
-    block_sector_t start;               /* First data sector. */
-    off_t length;                       /* File size in bytes. */
-    unsigned magic;                     /* Magic number. */
-    block_sector_t addrs[NDIRECT+2];              
-  };
 
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
@@ -38,16 +22,7 @@ bytes_to_sectors (off_t size)
   return DIV_ROUND_UP (size, BLOCK_SECTOR_SIZE);
 }
 
-/* In-memory inode. */
-struct inode 
-  {
-    struct list_elem elem;              /* Element in inode list. */
-    block_sector_t sector;              /* Sector number of disk location. */
-    int open_cnt;                       /* Number of openers. */
-    bool removed;                       /* True if deleted, false otherwise. */
-    int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
-    struct inode_disk data;             /* Inode content. */
-  };
+
 
 
 
@@ -82,7 +57,7 @@ inode_init (void)
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (block_sector_t sector, off_t length)
+inode_create (block_sector_t sector, off_t length, int type)
 {
   ASSERT (sizeof (struct inode_disk) == BLOCK_SECTOR_SIZE);
   //printf("creating inode\n");
@@ -104,6 +79,7 @@ inode_create (block_sector_t sector, off_t length)
       sectors = bytes_to_sectors (length);
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
+      disk_inode->type = type;
       sectors_allocated = malloc((size_t)sectors*sizeof(uint32_t));
       
       //printf("sectors %d\n",sectors);
@@ -220,8 +196,10 @@ inode_close (struct inode *inode)
       if (inode->removed) 
         {
           free_map_release (inode->sector, 1);
-          free_map_release (inode->data.start,
+          /*free_map_release (inode->data.start,
                             bytes_to_sectors (inode->data.length)); 
+          */
+          free_inode_data(inode);
         }
 
       free (inode); 
@@ -308,8 +286,11 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   if (inode->deny_write_cnt)
     return 0;
   
-  if(inode_length(inode) < offset + size)
+  if(inode_length(inode) < offset + size){
     (inode->data).length = offset + size;
+    block_write(fs_device,inode->sector,&inode->data);
+    //printf("new file size %d\n",(inode->data).length);
+  }
 
   while (size > 0) 
     {
@@ -390,6 +371,14 @@ inode_length (const struct inode *inode)
   return inode->data.length;
 }
 
+bool 
+inode_isremoved(struct inode *inode)
+{
+  ASSERT(inode != NULL);
+  return inode->removed;
+}
+
+
 /* 
   The contents (data) associated with each inode is stored
   in a sequence of blocks on the disk.  The first NDIRECT blocks
@@ -468,7 +457,7 @@ find_block(struct inode *ip, uint32_t file_sector)
     return addr;
   }
   
-PANIC("NEVER SHOULD HAVE COME HERE");
+  //PANIC("NEVER SHOULD HAVE COME HERE");
  
   
   file_sector -= NINDIRECT;
@@ -487,9 +476,10 @@ PANIC("NEVER SHOULD HAVE COME HERE");
     
     uint32_t first_level = file_sector/NINDIRECT;
     uint32_t second_level = file_sector%NINDIRECT;
-    
-  
-    if((addr=buffer[first_level]) == 0){
+   // printf("levels are %d,%d,%d\n",first_level,second_level,file_sector);
+  //  PANIC("NEVER SHOULD HAVE COME HERE levels are %d,%d,%d\n",first_level,second_level,file_sector);
+    addr = buffer[first_level];
+    if(addr == 0){
       if(!free_map_allocate(1,&buffer[first_level])){
         free(buffer);
         return (uint32_t)NULL;
@@ -518,7 +508,55 @@ PANIC("NEVER SHOULD HAVE COME HERE");
     free(buffer);
     return addr;
   }
-  
-
   PANIC("bmap: out of range");
+}
+
+/* Frees all the sectors used by inode to use for storing its 
+   data. It parses through all direct,indirect and doubly indirect 
+   links to free the data blocks */
+static void
+free_inode_data(struct inode *ip)
+{
+  struct inode_disk *inode = &ip->data;
+  int i;
+  uint32_t *buffer, *buffer2;
+  buffer = malloc(BLOCK_SECTOR_SIZE);
+  
+  for(i=0; i<NDIRECT; i++){
+    if(inode->addrs[i]){
+      free_map_release(inode->addrs[i],1);
+      inode->addrs[i] = 0;
+    }
+  }
+  if(inode->addrs[NDIRECT]){
+    block_read(fs_device, inode->addrs[NDIRECT], buffer);
+    for(i=0; i<(int)NINDIRECT ;i++){
+      if(buffer[i]){
+        free_map_release(buffer[i], 1);
+      }
+    }
+    free_map_release(inode->addrs[NDIRECT],1);
+    inode->addrs[NDIRECT] = 0;
+  }
+  if(inode->addrs[NDIRECT+1]){
+    //PANIC("NEVER SHOULD HAVE COME HERE");
+    buffer2 = malloc(BLOCK_SECTOR_SIZE);
+    block_read(fs_device, inode->addrs[NDIRECT+1], buffer);
+    for(i=0; i<(int)NINDIRECT ;i++){
+      if(buffer[i]){
+        block_read(fs_device, buffer[i], buffer2);
+        int j;
+        for(j=0; j<(int)NINDIRECT; j++){
+          if(buffer2[j]){
+            free_map_release(buffer2[j], 1);
+          }
+        }
+        free_map_release(buffer[i], 1);
+      }
+    }
+    free_map_release(inode->addrs[NDIRECT+1],1);
+    inode->addrs[NDIRECT+1] = 0;
+    free(buffer2);
+  }
+  free(buffer);
 }

@@ -14,11 +14,15 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "../lib/kernel/bitmap.h"
-#include "filesys/file.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
+#include "userprog/syscall.h"
 #endif
+
+#include "filesys/file.h"
+#include "filesys/directory.h"
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -194,6 +198,11 @@ thread_create_blocked (const char *name, int priority,
 
   /* Initialize thread. */
   init_thread (t, name, priority);
+  
+  if(thread_current()->cwd != NULL)
+    t->cwd = dir_reopen(thread_current()->cwd);
+ 
+  
   t->tid = allocate_tid ();
   t->parent = thread_tid();
 
@@ -243,6 +252,7 @@ tid_t
 thread_create (const char *name, int priority,
                thread_func *function, void *aux) 
 {
+  //printf("inside thread cretae\n");
 	struct thread *t;
 	t = thread_create_blocked (name, priority, function, aux);
   
@@ -373,14 +383,18 @@ thread_exit (int exit_code)
 #ifdef USERPROG
   process_exit ();
 #endif
-
+  
+  lock_acquire(&file_lock);
+  dir_close(thread_current()->cwd);
+  file_close(thread_current()->current_executable);
+  lock_release(&file_lock);
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it call schedule_tail(). */
   intr_disable ();
-  
+
   printf("%s: exit(%d)\n", thread_current ()->name, exit_code);
-  file_allow_write (thread_current () -> current_executable);
+ // file_allow_write (thread_current () -> current_executable);
   bitmap_destroy(thread_current() -> fd_entry);
   fd_mem_free();
  

@@ -8,7 +8,7 @@
 #include "threads/init.h"
 #include "threads/palloc.h"
 #include "threads/malloc.h"
-#include "threads/synch.h"
+
 #include "lib/syscall-nr.h"
 #include "userprog/syscall.h"
 #include "lib/user/syscall.h"
@@ -22,8 +22,7 @@
 #include "lib/string.h"
 #include "devices/input.h"
 
-/* global file lock*/
-static struct lock file_lock;
+
 
 static void syscall_handler (struct intr_frame *);
 
@@ -224,8 +223,11 @@ void close (int fd)
   goto done;
   if ((fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
       || (fd == STDIN_FILENO && thread_current() -> fd_std_in) 
-      || (fd == 2 && thread_current() -> fd_std_err))
+      || (fd == 2 && thread_current() -> fd_std_err)){
+        lock_release(&file_lock);
         thread_exit(-1);
+        
+  }
   
   struct fd_table_element *fd_elem = find_file (fd);
   if (fd_elem == NULL)
@@ -381,6 +383,164 @@ unsigned tell (int fd)
 
 }
 
+bool 
+chdir(const char *file_name)
+{
+  while(!lock_try_acquire(&file_lock))
+    thread_yield();
+  bool result, valid;
+  valid = validate_buffer (file_name, "", PGSIZE, false);
+  if (!valid)
+  {
+    result = false;
+    goto done;
+  }
+  result = dir_chdir(file_name);
+  done:
+    lock_release(&file_lock);
+  return result;
+}
+
+bool 
+mkdir(const char *file_name)
+{
+  while(!lock_try_acquire(&file_lock))
+    thread_yield();
+  bool result, valid;
+  valid = validate_buffer (file_name, "", PGSIZE, false);
+  if (!valid)
+  {
+    result = false;
+    goto done;
+  }
+  result = dir_mkdir(file_name);
+  done:
+    lock_release(&file_lock);
+  return result;
+}
+
+bool
+readdir(int fd, char *file_name)
+{
+  //printf("inside readdir\n");
+
+  while(!lock_try_acquire(&file_lock))
+    thread_yield();
+  bool result = 0;
+  if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
+      || (fd == 2 && thread_current() -> fd_std_err)
+      || (fd == STDIN_FILENO && thread_current() -> fd_std_in))
+  {
+    result = false;
+    goto done;
+  }
+  bool valid;
+  valid = validate_buffer (file_name, NULL, NAME_MAX+1 , true);
+  if (!valid)
+  {
+    printf("buffer invalid\n");
+    lock_release (&file_lock);
+    thread_exit (-1);
+    NOT_REACHED ();
+  }
+
+  struct fd_table_element *fd_elem = find_file (fd);
+  if (fd_elem == NULL){
+    printf("fd not found\n");
+    goto done;
+  }
+  struct file * read = fd_elem -> file_name;
+  if (read == NULL)
+  {
+    printf("file empty\n");
+    result = false;
+    goto done;
+  }
+  struct inode *inode = file_get_inode(read);
+  if(inode->data.type != T_DIR){
+    //printf("not dir\n");
+    result = false;
+    goto done;
+  }
+  
+  struct dir *dir = dir_open(inode);
+  dir_seek(dir,file_tell(read));
+  result = dir_readdir (dir, file_name);
+  if(result){
+    file_seek(read,dir_tell(dir));
+  }
+  done:
+  dir_close(dir);
+  lock_release(&file_lock);
+    
+  return result;
+  
+}
+
+bool
+isdir(int fd)
+{
+  while(!lock_try_acquire(&file_lock))
+    thread_yield();
+  int result = 0;
+  if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
+      || (fd == 2 && thread_current() -> fd_std_err)
+      || (fd == STDIN_FILENO && thread_current() -> fd_std_in))
+  {
+    result = -1;
+    goto done;
+  }
+  
+  struct fd_table_element *fd_elem = find_file (fd);
+  if (fd_elem == NULL)
+    goto done;
+  struct file * read = fd_elem -> file_name;
+  if (read == NULL)
+  {
+      result = -1;
+      goto done;
+  }
+  struct inode *inode = file_get_inode(read);
+  if(inode->data.type == T_DIR){
+    result = -1;
+    goto done;
+  }
+  
+  result = true;
+  
+  done:
+    lock_release(&file_lock);
+  return result;
+}
+
+int inumber(int fd)
+{
+  while(!lock_try_acquire(&file_lock))
+    thread_yield();
+  int result = 0;
+  if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
+      || (fd == 2 && thread_current() -> fd_std_err)
+      || (fd == STDIN_FILENO && thread_current() -> fd_std_in))
+  {
+    result = -1;
+    goto done;
+  }
+  
+  struct fd_table_element *fd_elem = find_file (fd);
+  if (fd_elem == NULL)
+    goto done;
+  struct file * read = fd_elem -> file_name;
+  if (read == NULL)
+  {
+      result = -1;
+      goto done;
+  }
+  struct inode *inode = file_get_inode(read);
+  result = inode->sector;
+  done:
+    lock_release(&file_lock);
+  return result;
+}
 static void
 syscall_handler (struct intr_frame *f) 
 {
@@ -458,6 +618,31 @@ syscall_handler (struct intr_frame *f)
       if (!arg0_valid)
         on_pgfault();
       close ((int) arg0);
+      break;
+    case SYS_CHDIR:
+      if (!arg0_valid)
+        on_pgfault();
+      result = (int) chdir((const char *) arg0);
+      break;
+    case SYS_MKDIR:
+      if (!arg0_valid)
+        on_pgfault();
+      result = (int) mkdir((const char *) arg0);
+      break;
+    case SYS_READDIR:
+      if (!arg0_valid || !arg1_valid )
+        on_pgfault();
+      result = (int) readdir ((int) arg0, (char *) arg1);
+      break;
+    case SYS_ISDIR:
+      if (!arg0_valid)
+        on_pgfault();
+      result = (int) isdir((int) arg0);
+      break;
+    case SYS_INUMBER:
+      if (!arg0_valid)
+        on_pgfault();
+      result = (int) inumber((int) arg0);
       break;
     default:
       printf ("undefined system call(%d)!\n", sys_num);

@@ -110,6 +110,8 @@ struct thread
 #endif
     int exit_code;                      /* Exit code. */
     /* Owned by thread.c. */
+    
+    struct dir *cwd;                    /* current working directory */
     unsigned magic;                     /* Detects stack overflow. */
   };
   
