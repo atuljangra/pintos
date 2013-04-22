@@ -60,6 +60,7 @@ filesys_create (const char *name, off_t initial_size)
   
   struct inode *inode = parent_inode(path,x);
   struct dir *dir = dir_open(inode);
+  ASSERT(dir_isDir(dir));
   bool success = false;
   if(dir!=NULL && dir_isremoved(dir)){
     success = false;
@@ -116,7 +117,7 @@ filesys_open (const char *name)
   free(temp);
   //ASSERT(inode != NULL);
   struct file *file = file_open (inode);
-  if(file!=NULL && inode->data.type == T_DIR){
+  if(file!=NULL && inode_isDir(inode)){
     file_seek(file,2*direntry_size());
   }
   return file;

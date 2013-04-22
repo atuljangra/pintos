@@ -396,6 +396,7 @@ chdir(const char *file_name)
     goto done;
   }
   result = dir_chdir(file_name);
+
   done:
     lock_release(&file_lock);
   return result;
@@ -457,20 +458,22 @@ readdir(int fd, char *file_name)
     goto done;
   }
   struct inode *inode = file_get_inode(read);
-  if(inode->data.type != T_DIR){
+  struct dir *dir = dir_open(inode);
+  if(!inode_isDir(inode)){
     //printf("not dir\n");
     result = false;
     goto done;
   }
   
-  struct dir *dir = dir_open(inode);
+  
   dir_seek(dir,file_tell(read));
   result = dir_readdir (dir, file_name);
+  //result = true;
   if(result){
     file_seek(read,dir_tell(dir));
   }
   done:
-  dir_close(dir);
+  //dir_close(dir);
   lock_release(&file_lock);
     
   return result;
@@ -482,12 +485,12 @@ isdir(int fd)
 {
   while(!lock_try_acquire(&file_lock))
     thread_yield();
-  int result = 0;
+  bool result = false;
   if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
       || (fd == 2 && thread_current() -> fd_std_err)
       || (fd == STDIN_FILENO && thread_current() -> fd_std_in))
   {
-    result = -1;
+    result = false;
     goto done;
   }
   
@@ -497,16 +500,11 @@ isdir(int fd)
   struct file * read = fd_elem -> file_name;
   if (read == NULL)
   {
-      result = -1;
       goto done;
   }
   struct inode *inode = file_get_inode(read);
-  if(inode->data.type == T_DIR){
-    result = -1;
-    goto done;
-  }
-  
-  result = true;
+  if(inode_isDir(inode))
+    result = true;
   
   done:
     lock_release(&file_lock);
@@ -544,6 +542,9 @@ int inumber(int fd)
 static void
 syscall_handler (struct intr_frame *f) 
 {
+
+   ASSERT(dir_isDir(thread_current()->cwd));
+  
   uint32_t *sp = (uint32_t *) f->esp;
   bool sys_num_valid;
   int sys_num = getl_user(&sp[0], &sys_num_valid);
@@ -554,6 +555,7 @@ syscall_handler (struct intr_frame *f)
   int arg1 = getl_user (&sp[2], &arg1_valid);
   int arg2 = getl_user (&sp[3], &arg2_valid);
   int result = 0;
+   // printf("inside syscall_handler %d \n",sys_num);
   switch (sys_num)
   {
     case SYS_HALT:
@@ -645,10 +647,13 @@ syscall_handler (struct intr_frame *f)
       result = (int) inumber((int) arg0);
       break;
     default:
-      printf ("undefined system call(%d)!\n", sys_num);
+      //printf ("undefined system call(%d)!\n", sys_num);
       thread_exit (-1);
   }
   f->eax = result;
+  
+   ASSERT(dir_isDir(thread_current()->cwd));
+   //printf("exiting syscall\n");
 }
  	
 void on_pgfault ()

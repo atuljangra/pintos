@@ -37,5 +37,5 @@ bool dir_isremoved(struct dir *dir);
 off_t dir_tell (struct dir *dir);
 void dir_seek (struct dir *dir,off_t pos);
 size_t direntry_size(void);
-bool dir_isDir(block_sector_t sector);
+bool dir_isDir(struct dir *dir);
 #endif /* filesys/directory.h */

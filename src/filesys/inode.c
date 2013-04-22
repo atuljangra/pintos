@@ -90,19 +90,6 @@ inode_create (block_sector_t sector, off_t length, int type)
         if(sectors_allocated[i] == (uint32_t)NULL)
           goto invalid;
       }
-      /*if (free_map_allocate (sectors, &disk_inode->start)) 
-        {
-          block_write (fs_device, sector, disk_inode);
-          if (sectors > 0) 
-            {
-              static char zeros[BLOCK_SECTOR_SIZE];
-              size_t i;
-              
-              for (i = 0; i < sectors; i++) 
-                block_write (fs_device, disk_inode->start + i, zeros);
-            }
-          success = true; 
-        } */
       block_write (fs_device, sector, disk_inode);
       success = true;
       
@@ -376,6 +363,14 @@ inode_isremoved(struct inode *inode)
 {
   ASSERT(inode != NULL);
   return inode->removed;
+}
+
+bool
+inode_isDir(struct inode *inode)
+{
+  if((inode->data).type == T_DIR)
+    return true;
+  return false;
 }
 
 

@@ -141,6 +141,7 @@ archive_ordinary_file (const char *file_name, int file_fd,
 
       if (bytes_read != chunk_size && !read_error) 
         {
+          printf("yahaan hai\n");
           printf ("%s: read error\n", file_name);
           read_error = true;
           success = false;

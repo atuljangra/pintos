@@ -223,14 +223,16 @@ dir_remove (struct dir *dir, const char *name)
   if (inode == NULL)
     goto done;
 
+  if(inode->data.type == T_DIR && !dir_isEmpty(dir_open(inode))){
+    goto done;
+  }
+  
   /* Erase directory entry. */
   e.in_use = false;
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
     goto done;
 
-  if(inode->data.type == T_DIR && !dir_isEmpty(dir_open(inode))){
-    goto done;
-  }
+
   /* Remove inode. */
   inode_remove (inode);
   success = true;
@@ -254,7 +256,7 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
       if (e.in_use)
         {
           strlcpy (name, e.name, NAME_MAX + 1);
-          printf("found %s\n",name);
+          //printf("found %s\n",name);
           return true;
         } 
     }
@@ -265,24 +267,33 @@ bool
 dir_chdir(const char *name)
 {
   //printf("changing directory %s\n",name);
+  ASSERT(dir_isDir(thread_current()->cwd));
+ 
+  
   char *path = malloc(strlen(name)+1);
   char *temp = path;
   memcpy(path,name,strlen(name)+1);
   struct inode *inode = NULL;
 	inode = inode_name(path);
+  
   struct dir *dir = dir_open(inode);
   if(dir == NULL)
     return false;
+    
   struct thread *cur = thread_current();
   dir_close(cur->cwd);
   cur->cwd = dir;
   free(temp);
+  ASSERT(dir_isDir(thread_current()->cwd));
+  //printf("done changing directory\n");
   return true;
 }
 
 bool 
 dir_mkdir(const char *name)
 {
+  ASSERT(dir_isDir(thread_current()->cwd));
+  
   block_sector_t inode_sector = 0;
   char *path = malloc(strlen(name)+1);
   char *temp1 = path;
@@ -292,20 +303,26 @@ dir_mkdir(const char *name)
   
   struct inode *inode = parent_inode(path,x);
   struct dir *dir = dir_open(inode);
-
+  
   //struct dir *dir = dir_open_root ();
   bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
                   && dir_create (inode_sector, 16)
                   && dir_add (dir, x, inode_sector));
- // printf("inode number %d\n",inode_sector);
+  //printf("inode number %d\n",inode_sector);
   
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
-  //dir_close (dir);
-//ASSERT(success);
+  
+  dir_close (dir);
+
+  inode = inode_open(inode_sector);
+
+  inode_close(inode);
+  
   free(temp1);
   free(temp2);
+  ASSERT(dir_isDir(thread_current()->cwd));
   return success;
 }
 
@@ -468,6 +485,7 @@ static bool
 dir_init(block_sector_t sector)
 {
     struct dir *dir = dir_open(inode_open(sector));
+    ASSERT(dir_isDir(dir));
     block_sector_t parent;
     if(sector == ROOT_DIR_SECTOR)
       parent = ROOT_DIR_SECTOR;
@@ -476,7 +494,8 @@ dir_init(block_sector_t sector)
       parent = dir_get_inode(cwd)->sector;
     }
     bool status = dir_add(dir, "..",parent);
-    status |= dir_add(dir,".",sector);
+    if(status)
+      status = dir_add(dir,".",sector);
     
     dir_close(dir);
     return status;
@@ -495,4 +514,10 @@ dir_isEmpty(struct dir *dir)
       } 
   }
   return true;
+}
+
+bool 
+dir_isDir(struct dir *dir)
+{
+  return inode_isDir(dir->inode);
 }

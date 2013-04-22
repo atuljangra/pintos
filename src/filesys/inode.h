@@ -54,4 +54,5 @@ void inode_deny_write (struct inode *);
 void inode_allow_write (struct inode *);
 off_t inode_length (const struct inode *);
 bool inode_isremoved(struct inode *inode);
+bool inode_isDir(struct inode *inode);
 #endif /* filesys/inode.h */

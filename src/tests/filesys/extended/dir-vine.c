@@ -45,8 +45,10 @@ test_main (void)
       
       /* Create directory. */
       snprintf (dir_name, sizeof dir_name, "dir%d", i);
-      if (!mkdir (dir_name)) 
+       if (!mkdir (dir_name)) 
         {
+          printf("removing\n");
+          exit(-1);
           CHECK (remove (file_name), "remove \"%s\"", file_name);
           break; 
         }
