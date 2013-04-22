@@ -769,7 +769,7 @@ unsigned add_file( struct file *f)
    struct fd_table_element *fd_elem = (struct fd_table_element *)malloc(sizeof (struct fd_table_element));
    fd_elem -> file_name = f;
    fd_elem -> fd = fd_next_available();
-//   printf ("am I here????????? %d \t", fd_elem -> fd);
+//   printf ("am I here????????? %d %d  \t", fd_elem -> fd, thread_current () -> tid);
    bitmap_mark (thread_current() -> fd_entry, fd_elem -> fd);
    list_push_back (thread_current() -> fd_table, &fd_elem -> file_elem);
    return fd_elem -> fd;

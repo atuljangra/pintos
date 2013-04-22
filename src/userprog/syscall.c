@@ -186,7 +186,6 @@ int write (int fd, const void *buffer, unsigned length)
  */
 int open (const char *file)
 {
-/*  printf("opening %s\n", file);*/
   while(!lock_try_acquire(&file_lock))
     thread_yield();
   bool valid;
@@ -236,7 +235,6 @@ void close (int fd)
   {
     file_close (fd_elem -> file_name);
     list_remove (&fd_elem -> file_elem);
-    goto done;
   }
     entry_remove (fd);
   done:
