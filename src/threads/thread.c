@@ -387,6 +387,7 @@ thread_exit (int exit_code)
   lock_acquire(&file_lock);
   dir_close(thread_current()->cwd);
   file_close(thread_current()->current_executable);
+  fd_mem_free();
   lock_release(&file_lock);
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
@@ -396,7 +397,7 @@ thread_exit (int exit_code)
   printf("%s: exit(%d)\n", thread_current ()->name, exit_code);
  // file_allow_write (thread_current () -> current_executable);
   bitmap_destroy(thread_current() -> fd_entry);
-  fd_mem_free();
+  
  
   /* do not create exit structure if current thread is orphan */
   if(get_thread(thread_current() -> parent) != NULL)

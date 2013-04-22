@@ -9,7 +9,6 @@
 #include "filesys/inode.h"
 #include "filesys/free-map.h"
 static char* skipelem(char *path, char *name);
-static bool dir_init(block_sector_t sector);
 static bool dir_isEmpty(struct dir *dir);
 
 
@@ -30,25 +29,17 @@ struct dir_entry
   };
   
 /* Creates a directory with space for ENTRY_CNT entries in the
-   given SECTOR.  Returns true if successful, false on failure. */
+   given SECTOR.  Returns true if successful, false on failure.*/
 bool
 dir_create (block_sector_t sector, size_t entry_cnt)
 {
-  bool status = inode_create (sector, entry_cnt * sizeof (struct dir_entry),T_DIR);
-  if(status){
-    status = dir_init(sector);
-    if(!status){
-      struct inode *inode = inode_open(sector);
-      inode_remove(inode);
-      inode_close(inode);
-    }
- 			
-	}
-  return status;
+  return inode_create (sector, entry_cnt * sizeof (struct dir_entry),T_DIR);
 }
 
 /* Opens and returns the directory for the given INODE, of which
-   it takes ownership.  Returns a null pointer on failure. */
+   it takes ownership.  Returns a null pointer on failure.
+   The first two directory entries are "." and ".." so the directory
+   position is initialized after default entries */
 struct dir *
 dir_open (struct inode *inode) 
 {
@@ -202,7 +193,10 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
 
 /* Removes any entry for NAME in DIR.
    Returns true if successful, false on failure,
-   which occurs only if there is no file with the given NAME. */
+   which occurs only if there is no file with the given NAME.
+   When trying to remove a directory, if it is not empty i.e. it 
+   contains other than default directory entries then false is returned.
+   The directory cannot be removed */
 bool
 dir_remove (struct dir *dir, const char *name) 
 {
@@ -249,20 +243,22 @@ bool
 dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
   struct dir_entry e;
-
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e) 
+  {
+    dir->pos += sizeof e;
+    if (e.in_use)
     {
-      dir->pos += sizeof e;
-      if (e.in_use)
-        {
-          strlcpy (name, e.name, NAME_MAX + 1);
-          //printf("found %s\n",name);
-          return true;
-        } 
-    }
+      strlcpy (name, e.name, NAME_MAX + 1);
+      return true;
+    } 
+  }
   return false;
 }
 
+/* Given the path ,verifies if the path of an existing
+   directory is given.If not then false is returned.
+   Otherwise the current working directory is changed
+   and returns true */
 bool
 dir_chdir(const char *name)
 {
@@ -303,23 +299,24 @@ dir_mkdir(const char *name)
   
   struct inode *inode = parent_inode(path,x);
   struct dir *dir = dir_open(inode);
-  
+  bool success = false;
+  if(dir!=NULL && dir_isremoved(dir)){
+    success = false;
+    goto done;
+  }
   //struct dir *dir = dir_open_root ();
-  bool success = (dir != NULL
-                  && free_map_allocate (1, &inode_sector)
-                  && dir_create (inode_sector, 16)
-                  && dir_add (dir, x, inode_sector));
-  //printf("inode number %d\n",inode_sector);
+  success = ( dir != NULL
+              && free_map_allocate (1, &inode_sector)
+              && dir_create (inode_sector, 16)
+              && dir_add (dir, x, inode_sector)
+              && dir_init(inode_sector,inode_get_inumber(inode)));
+
   
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
-  
+
+  done:
   dir_close (dir);
-
-  inode = inode_open(inode_sector);
-
-  inode_close(inode);
-  
   free(temp1);
   free(temp2);
   ASSERT(dir_isDir(thread_current()->cwd));
@@ -481,18 +478,12 @@ parent_inode(char *path, char *name)
   return get_name(path, 1, name);
 }
 
-static bool
-dir_init(block_sector_t sector)
+bool
+dir_init(block_sector_t sector,block_sector_t parent)
 {
     struct dir *dir = dir_open(inode_open(sector));
     ASSERT(dir_isDir(dir));
-    block_sector_t parent;
-    if(sector == ROOT_DIR_SECTOR)
-      parent = ROOT_DIR_SECTOR;
-    else{
-      struct dir *cwd = thread_current()->cwd;
-      parent = dir_get_inode(cwd)->sector;
-    }
+
     bool status = dir_add(dir, "..",parent);
     if(status)
       status = dir_add(dir,".",sector);

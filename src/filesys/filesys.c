@@ -68,17 +68,18 @@ filesys_create (const char *name, off_t initial_size)
   }
   
   //struct dir *dir = dir_open_root ();
-  success = (dir != NULL
-                  && free_map_allocate (1, &inode_sector)
-                  && inode_create (inode_sector, initial_size, T_FILE)
-                  && dir_add (dir, x, inode_sector));
+  success = ( dir != NULL
+              && free_map_allocate (1, &inode_sector)
+              && inode_create (inode_sector, initial_size, T_FILE)
+              && dir_add (dir, x, inode_sector));
  // printf("inode number %d\n",inode_sector);
   
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
-  //dir_close (dir);
+
 //ASSERT(success);
   done:
+  dir_close (dir);
   free(temp1);
   free(temp2);
   return success;
@@ -92,7 +93,6 @@ filesys_create (const char *name, off_t initial_size)
 struct file *
 filesys_open (const char *name)
 {
-  //printf("opening file %s\n",name);
   if(dir_isremoved(thread_current()->cwd)){
     if(!memcmp(name,".",strlen(name)))
       return NULL;
@@ -102,24 +102,19 @@ filesys_open (const char *name)
   char *path = malloc(strlen(name)+1);
   char *temp = path;
   memcpy(path,name,strlen(name)+1);
-  //printf("input file is %s\t%s\n",name,path);
-  //path[strlen] = '\0';
- // ASSERT(dir!=NULL);
-  //struct dir *dir = dir_open_root ();
-  struct inode *inode = NULL;
-  //if (dir != NULL)
-    //dir_lookup (dir, name, &inode);
-  //dir_close (dir);
-	inode = inode_name(path);
 
-    
-  
+  struct inode *inode = NULL;
+	inode = inode_name(path);
   free(temp);
-  //ASSERT(inode != NULL);
   struct file *file = file_open (inode);
   if(file!=NULL && inode_isDir(inode)){
     file_seek(file,2*direntry_size());
   }
+  /*struct inode *inode = malloc(sizeof(struct inode));
+  bool status = dir_lookup(thread_current()->cwd,name,&inode);
+  struct file *file = NULL;
+  ASSERT(status);
+  file = file_open(inode);*/
   return file;
 }
 
@@ -138,11 +133,9 @@ filesys_remove (const char *name)
   
   struct inode *inode = parent_inode(path,x);
   struct dir *dir = dir_open(inode);
-  //struct dir *dir = dir_open_root ();
-  //printf("name is %s\n",x);
+  
   bool success = dir != NULL && dir_remove (dir, x);
   dir_close (dir); 
-  
   free(temp1);
   free(temp2);
   return success;
@@ -156,6 +149,8 @@ do_format (void)
   free_map_create ();
   if (!dir_create (ROOT_DIR_SECTOR, 16))
     PANIC ("root directory creation failed");
+  if(!dir_init(ROOT_DIR_SECTOR,ROOT_DIR_SECTOR))
+    PANIC("root directory initialization failed");
   free_map_close ();
   printf ("done.\n");
 }

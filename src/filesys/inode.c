@@ -37,7 +37,7 @@ byte_to_sector (struct inode *inode, off_t pos)
   if (pos < inode->data.length)
     return find_block(inode, pos/BLOCK_SECTOR_SIZE);
   else
-    return -1;
+    return 0;
 }
 
 /* List of open inodes, so that opening a single inode twice
@@ -87,7 +87,7 @@ inode_create (block_sector_t sector, off_t length, int type)
         sectors_allocated[i] = find_block(inode, i);
         //ASSERT((inode->data).addrs[i] == sectors_allocated[i]);
         //printf("allocted sector %d\n",sectors_allocated[i]);
-        if(sectors_allocated[i] == (uint32_t)NULL)
+        if(sectors_allocated[i] == 0)
           goto invalid;
       }
       block_write (fs_device, sector, disk_inode);
@@ -103,7 +103,7 @@ inode_create (block_sector_t sector, off_t length, int type)
   //printf("unable to allocate\n");
 
   for(i=0; i<sectors; i++){
-    if(sectors_allocated[i] == (uint32_t)NULL)
+    if(sectors_allocated[i] == 0)
       break;
     free_map_release(sectors_allocated[i],1);
   }
@@ -216,6 +216,9 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
     {
       /* Disk sector to read, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset);
+      if(sector_idx == 0)
+        return 0;
+        
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
@@ -283,6 +286,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     {
       /* Sector to write, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset);
+      if(sector_idx == 0)
+        return 0;
+      
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
@@ -400,7 +406,7 @@ find_block(struct inode *ip, uint32_t file_sector)
 			//printf("allocating bmap\n");
       if(!free_map_allocate(1,&inode->addrs[file_sector])){
         free(buffer);
-        return (uint32_t)NULL;
+        return 0;
       }
       //printf("returning allocated sector %d\n",inode->addrs[file_sector]);
       block_write(fs_device,ip->sector,inode);
@@ -423,7 +429,7 @@ find_block(struct inode *ip, uint32_t file_sector)
     if(inode->addrs[NDIRECT] == 0){
       if(!free_map_allocate(1,&inode->addrs[NDIRECT])){
         free(buffer);
-        return (uint32_t)NULL;
+        return 0;
       }
       
       block_write(fs_device,ip->sector,inode);
@@ -435,7 +441,7 @@ find_block(struct inode *ip, uint32_t file_sector)
     if(buffer[file_sector] == 0){
       if(!free_map_allocate(1,&buffer[file_sector])){
         free(buffer);
-        return (uint32_t)NULL;
+        return 0;
       }
         
       block_write(fs_device,inode->addrs[NDIRECT],buffer);
@@ -461,7 +467,7 @@ find_block(struct inode *ip, uint32_t file_sector)
     if(inode->addrs[NDIRECT+1] == 0){
       if(!free_map_allocate(1,&inode->addrs[NDIRECT+1])){
         free(buffer);
-        return (uint32_t)NULL;
+        return 0;
       }
       block_write(fs_device,ip->sector,inode);
       memset(buffer,0,BLOCK_SECTOR_SIZE);
@@ -477,7 +483,7 @@ find_block(struct inode *ip, uint32_t file_sector)
     if(addr == 0){
       if(!free_map_allocate(1,&buffer[first_level])){
         free(buffer);
-        return (uint32_t)NULL;
+        return 0;
       }
       block_write(fs_device,inode->addrs[NDIRECT+1],buffer);
       addr = buffer[first_level];
@@ -490,7 +496,7 @@ find_block(struct inode *ip, uint32_t file_sector)
     if(buffer[second_level] == 0){
       if(!free_map_allocate(1,&buffer[second_level])){
         free(buffer);
-        return (uint32_t)NULL;
+        return 0;
       }
       block_write(fs_device,addr,buffer);
       addr = buffer[second_level];
