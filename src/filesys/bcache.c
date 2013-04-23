@@ -16,6 +16,8 @@ struct lock bcache_lock;
 
 void writeback (int);
 void evict_bcache (void);
+void request_readahead (block_sector_t );
+
 
 void init_bcache ()
 {
@@ -23,10 +25,11 @@ void init_bcache ()
   for (i = 0; i < BUFFER_CACHE_SIZE/sector_per_page; i++)
   {
     void *kpage = palloc_get_page (PAL_ZERO);
-    struct bcache_entry *temp;
+    if (!kpage)
+      PANIC ("get lost now, no page\n");
     for (j = 0; j < sector_per_page; j++)
     {
-      temp = (struct bcache_entry *) malloc (sizeof (struct bcache_entry));
+      struct bcache_entry *temp = (struct bcache_entry *) malloc (sizeof (struct bcache_entry));
 
       temp -> bsector = -1;
       // starting is not kpage, it it *in* the kpage but with some offset.
@@ -36,7 +39,9 @@ void init_bcache ()
       temp -> accessed = 0;
       temp -> read = 0;
       temp -> write = 0;
-      bcache[i * (sector_per_page+j)] = temp;
+      bcache[i * sector_per_page+j] = temp;
+      // printf ("Initialized %d with i: %d, j: %d pointing to %x %d , bcache: %x \n", i * sector_per_page + j, i, j, temp, temp, bcache[ i * sector_per_page+j]);
+      // free (temp);
     }
   }
 
@@ -57,11 +62,14 @@ int find_sector (block_sector_t blockid, int flag)
   int i = 0;
   for (i = 0; i < BUFFER_CACHE_SIZE; i++)
   {
+    // printf ("finding sector, iteration : %d buffer cache : %x \n", i, bcache[i]);
+    if (bcache [i] == NULL )
+      PANIC ("NULL CACHE \n");
     if (bcache[i] -> bsector == blockid)
     {
-      if (flag == 0)
+      if (flag == FLAG_READ)
         bcache[i] -> read++;
-      if (flag == 1)
+      if (flag == FLAG_WRITE)
         bcache[i] -> write++;
 
       lock_release (&bcache_lock);
@@ -85,12 +93,17 @@ size_t add_bcache (block_sector_t blockid)
   // If there is no such entry then we need to evict
   if (free_entry == BITMAP_ERROR)
   {
-    PANIC("eviction not implemented \n");
+    // printf ("evicting \t");
+    evict_bcache ();
+    free_entry = bitmap_scan (bcache_table, 0, 1, false);
   }
 
   ASSERT (free_entry != BITMAP_ERROR);
-  printf ("Adding bcache block %d \n", blockid);
+  //~ printf ("Adding bcache block %d %x kaddr %x %d \n", blockid, blockid,  bcache[free_entry] -> kaddr,  bcache[free_entry] -> kaddr);
+  // bcache[free_entry] -> kaddr = (void *)calloc (1, BLOCK_SECTOR_SIZE);
   block_read (fs_device, blockid, bcache[free_entry] -> kaddr);
+//  hex_dump (0, bcache[free_entry] -> kaddr, BLOCK_SECTOR_SIZE, true);
+  //~ printf ("add cache: read from disk %s \n", bcache[free_entry] -> kaddr);
   bcache[free_entry] -> dirty = false;
   bcache[free_entry] -> accessed = false;
   bcache[free_entry] -> bsector = blockid;
@@ -107,21 +120,29 @@ void read_bcache (block_sector_t blockid, void *buffer, off_t offset, int size)
 {
   // sanitychecks
   ASSERT (offset < BLOCK_SECTOR_SIZE);
-  printf ("Reading bcache at %d, offset %d, size %d \n", blockid, offset, size);
+  //~ printf ("Reading bcache at %d, offset %d, size %d \n", blockid, offset, size);
 
   // flag is 0 as it is a read access
-  int entry = find_sector (blockid, 0);
+  int entry = find_sector (blockid, FLAG_READ);
+
+  //~ printf ("bcache read: entry is %d \n", entry);
 
   // If no entry is there, then add the cache and increase the reader.
   if (entry == -1)
   {
     entry = add_bcache (blockid);
     bcache[entry] -> read++;
+    //~ printf ("bcache read: new entry is %d \n", entry);
+
+    // If we are just getting the data block for this entry from the disk, then
+    // we need to add the next block to the global readahead list, i.e. we need
+    // to request a readahead.
+     request_readahead (blockid + 1);
   }
 
   // Copying contents into the requested buffer
   memcpy (buffer, (bcache[entry] -> kaddr + offset), size);
-
+  //~ printf ("sector %d buffer %s odd: %s\n", blockid,  buffer, (bcache[entry] -> kaddr + offset));
   bcache[entry] -> accessed = true;
   bcache[entry] -> read--;
 
@@ -132,11 +153,12 @@ void write_bcache (block_sector_t blockid, void *buffer, int offset, int size)
 {
   //sanity checks
   ASSERT (offset < BLOCK_SECTOR_SIZE);
-  printf ("Writing bcache at %d, offset %d, size %d buffer %s \n", blockid, offset, size, buffer);
+  //~ printf ("Writing bcache at %d, offset %d, size %d buffer %s \n", blockid, offset, size, buffer);
 
   // flag is 1 as it is a write access
-  int entry = find_sector (blockid, 1);
+  int entry = find_sector (blockid, FLAG_WRITE);
 
+  //~ printf ("bcache write : entry is %d \n", entry);
   // If no entry is there, then add the cache and increase the reader.
   if (entry == -1)
   {
@@ -172,7 +194,7 @@ void writeback (int index)
     block_write (fs_device, bcache[index] -> bsector, bcache[index] -> kaddr);
 
   //End write
-  bcache[index] -> write ++;
+  bcache[index] -> write --;
 }
 
 // Evict cache to make place for another entry into the cache
@@ -184,6 +206,7 @@ void evict_bcache ()
   int evicted = -1;
   while (evicted == -1)
   {
+    // printf (".");
     for (i = 0; i < BUFFER_CACHE_SIZE; i++)
       // is the entry completely free
       if (bcache[i] -> write == 0 && bcache[i] -> read == 0)
@@ -200,3 +223,48 @@ void evict_bcache ()
       }
   }
 }
+
+// Function to flush the entire buffer cache to disk. 
+// This is called periodically by a kernel thread to ensure consistency of data.
+void flush_buffer_cache ()
+{
+  while (!lock_try_acquire (&bcache_lock))
+    thread_yield ();
+
+  int i;
+  for (i = 0; i < BUFFER_CACHE_SIZE; i++)
+    writeback (i);
+
+  lock_release (&bcache_lock);
+}
+
+// fulfills the readahead requests that was made while adding an entry to bcache
+// and is being fulfilled by the read_ahead thread.
+void fulfill_readahead (block_sector_t blockid)
+{
+  //If not already in cache, add it into the cache. 
+  if (find_sector (blockid, FLAG_NONE) == -1)
+    add_bcache (blockid);
+  // Otherwise we are good, so nothing to do at all
+}
+
+// This is the function to request readahead 
+void request_readahead (block_sector_t next_blockid)
+{
+  while (!lock_try_acquire (&readahead_lock))
+    thread_yield ();
+
+  struct readahead_entry *rentry = 
+    (struct readahead_entry *) malloc (sizeof (struct readahead_entry));
+  rentry -> bsector = next_blockid;
+
+  // Add the requested entry to the global list of requests
+  list_push_back (&readahead_list, &rentry -> elem);
+
+  // signal that the readahead thread can wake 
+  cond_signal (&readahead_condition, &readahead_lock);
+
+  // release the readahead lock
+  lock_release (&readahead_lock);
+}
+

@@ -135,6 +135,8 @@ void remove_file (struct file *);
 unsigned fd_next_available (void);
 void entry_remove(unsigned fd);
 
+/* Functions for filesys */
+void thread_filesys_init (void);
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */

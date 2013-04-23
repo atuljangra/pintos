@@ -109,8 +109,10 @@ lookup (const struct dir *dir, const char *name,
           *ep = e;
         if (ofsp != NULL)
           *ofsp = ofs;
+        //~ printf ("lookup true \n");
         return true;
       }
+      //~ printf ("lookup false name %s\n", name);
   return false;
 }
 
@@ -147,7 +149,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   struct dir_entry e;
   off_t ofs;
   bool success = false;
-
+  //~ printf ("adding %s to directory \n", name); 
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
@@ -156,8 +158,9 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
     return false;
 
   /* Check that NAME is not in use. */
-  if (lookup (dir, name, NULL, NULL))
-    goto done;
+  if (lookup (dir, name, NULL, NULL)){
+    //~ printf ("CREATE: Name does not exist, \n");
+    goto done;}
 
   /* Set OFS to offset of free slot.
      If there are no free slots, then it will be set to the
@@ -176,6 +179,10 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   strlcpy (e.name, name, sizeof e.name);
   e.inode_sector = inode_sector;
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+  //~ printf ("DIR ADD: success %d, e.name %s, name %s \n", success, e.name, name);
+  if (!lookup (dir, name, NULL, NULL)){
+    printf ("CREATE: Name does  not exist even after creating YAY, \n");
+  }
 
  done:
   return success;
