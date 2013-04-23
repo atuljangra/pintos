@@ -125,8 +125,7 @@ syscall_init (void)
 int write (int fd, const void *buffer, unsigned length)
 {
   int result;
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   if (fd < 0 || (fd == STDIN_FILENO && thread_current() -> fd_std_in) 
       || (fd == 2 && thread_current() -> fd_std_err))
   {
@@ -186,8 +185,7 @@ int write (int fd, const void *buffer, unsigned length)
  */
 int open (const char *file)
 {
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   bool valid;
   int fd = 0;
   struct file* file_open;
@@ -216,8 +214,7 @@ int open (const char *file)
  */
 void close (int fd)
 {
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   if (fd < 0)
   goto done;
   if ((fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
@@ -243,8 +240,7 @@ void close (int fd)
 
 int read (int fd, void* buffer, unsigned length)
 {
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   int result = 0;
   if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
       || (fd == 2 && thread_current() -> fd_std_err))
@@ -288,8 +284,7 @@ int read (int fd, void* buffer, unsigned length)
 /* thread exit? is it that serious? */
 bool create (const char *file_name, unsigned initial_size)
 {
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   bool result, valid; 
   valid = validate_buffer (file_name, "", PGSIZE, false);
   if (!valid || strnlen (file_name, 32) == 0)
@@ -307,8 +302,7 @@ bool create (const char *file_name, unsigned initial_size)
 bool remove (const char *file_name)
 {
 /*  printf("remove %s\n", file_name);*/
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   bool result, valid;
   valid = validate_buffer (file_name, "", PGSIZE, false);
   if (!valid)
@@ -324,8 +318,7 @@ bool remove (const char *file_name)
 
 int filesize (int fd)
 {
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   int result;
   if (fd < 0)
   {
@@ -346,8 +339,7 @@ int filesize (int fd)
 
 void seek (int fd, unsigned position)
 {
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   if ( fd < 0)
     goto done;
 //    printf ("am I here???"); 
@@ -360,8 +352,7 @@ void seek (int fd, unsigned position)
 
 unsigned tell (int fd)
 {
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   unsigned result;
   if (fd < -1)
   {
@@ -384,8 +375,7 @@ unsigned tell (int fd)
 bool 
 chdir(const char *file_name)
 {
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   bool result, valid;
   valid = validate_buffer (file_name, "", PGSIZE, false);
   if (!valid)
@@ -403,8 +393,7 @@ chdir(const char *file_name)
 bool 
 mkdir(const char *file_name)
 {
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   bool result, valid;
   valid = validate_buffer (file_name, "", PGSIZE, false);
   if (!valid)
@@ -423,8 +412,7 @@ readdir(int fd, char *file_name)
 {
   //printf("inside readdir\n");
 
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   bool result = 0;
   if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
       || (fd == 2 && thread_current() -> fd_std_err)
@@ -481,8 +469,7 @@ readdir(int fd, char *file_name)
 bool
 isdir(int fd)
 {
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   bool result = false;
   if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
       || (fd == 2 && thread_current() -> fd_std_err)

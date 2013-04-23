@@ -7,7 +7,7 @@
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
-
+#include "filesys/buffer.h"
 
 
 static uint32_t find_block(struct inode *inode, uint32_t file_sector);
@@ -90,7 +90,7 @@ inode_create (block_sector_t sector, off_t length, int type)
         if(sectors_allocated[i] == 0)
           goto invalid;
       }
-      block_write (fs_device, sector, disk_inode);
+      bwrite(sector, disk_inode);
       success = true;
       
     }
@@ -143,7 +143,7 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
-  block_read (fs_device, inode->sector, &inode->data);
+  bread (inode->sector, &inode->data);
   return inode;
 }
 
@@ -234,7 +234,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
         {
           /* Read full sector directly into caller's buffer. */
-          block_read (fs_device, sector_idx, buffer + bytes_read);
+          bread(sector_idx, buffer + bytes_read);
         }
       else 
         {
@@ -246,7 +246,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
               if (bounce == NULL)
                 break;
             }
-          block_read (fs_device, sector_idx, bounce);
+          bread(sector_idx, bounce);
           memcpy (buffer + bytes_read, bounce + sector_ofs, chunk_size);
         }
       
@@ -278,7 +278,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   
   if(inode_length(inode) < offset + size){
     (inode->data).length = offset + size;
-    block_write(fs_device,inode->sector,&inode->data);
+    bwrite(inode->sector,&inode->data);
     //printf("new file size %d\n",(inode->data).length);
   }
 
@@ -286,8 +286,10 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     {
       /* Sector to write, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset);
-      if(sector_idx == 0)
+      if(sector_idx == 0){
+        PANIC("invalid offset");
         return 0;
+      }
       
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
@@ -304,7 +306,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
         {
           /* Write full sector directly to disk. */
-          block_write (fs_device, sector_idx, buffer + bytes_written);
+          bwrite(sector_idx, buffer + bytes_written);
         }
       else 
         {
@@ -320,11 +322,11 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
              we're writing, then we need to read in the sector
              first.  Otherwise we start with a sector of all zeros. */
           if (sector_ofs > 0 || chunk_size < sector_left) 
-            block_read (fs_device, sector_idx, bounce);
+            bread(sector_idx, bounce);
           else
             memset (bounce, 0, BLOCK_SECTOR_SIZE);
           memcpy (bounce + sector_ofs, buffer + bytes_written, chunk_size);
-          block_write (fs_device, sector_idx, bounce);
+          bwrite(sector_idx, bounce);
         }
 
       /* Advance. */
@@ -333,7 +335,6 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       bytes_written += chunk_size;
     }
   free (bounce);
-
   return bytes_written;
 }
 
@@ -409,11 +410,11 @@ find_block(struct inode *ip, uint32_t file_sector)
         return 0;
       }
       //printf("returning allocated sector %d\n",inode->addrs[file_sector]);
-      block_write(fs_device,ip->sector,inode);
+      bwrite(ip->sector,inode);
       
       addr = inode->addrs[file_sector];
       memset(buffer,0,BLOCK_SECTOR_SIZE);
-      block_write(fs_device,addr,buffer);
+      bwrite(addr,buffer);
 		}	
  
     free(buffer);
@@ -432,11 +433,11 @@ find_block(struct inode *ip, uint32_t file_sector)
         return 0;
       }
       
-      block_write(fs_device,ip->sector,inode);
+      bwrite(ip->sector,inode);
       memset(buffer,0,BLOCK_SECTOR_SIZE);
     }
     else
-      block_read(fs_device, inode->addrs[NDIRECT], buffer);
+      bread(inode->addrs[NDIRECT], buffer);
       
     if(buffer[file_sector] == 0){
       if(!free_map_allocate(1,&buffer[file_sector])){
@@ -444,11 +445,11 @@ find_block(struct inode *ip, uint32_t file_sector)
         return 0;
       }
         
-      block_write(fs_device,inode->addrs[NDIRECT],buffer);
+      bwrite(inode->addrs[NDIRECT],buffer);
       
       addr = buffer[file_sector];
       memset(buffer,0,BLOCK_SECTOR_SIZE);
-      block_write(fs_device,addr,buffer);
+      bwrite(addr,buffer);
     }
     else
       addr = buffer[file_sector];
@@ -469,11 +470,11 @@ find_block(struct inode *ip, uint32_t file_sector)
         free(buffer);
         return 0;
       }
-      block_write(fs_device,ip->sector,inode);
+      bwrite(ip->sector,inode);
       memset(buffer,0,BLOCK_SECTOR_SIZE);
     }
     else
-      block_read(fs_device, inode->addrs[NDIRECT+1], buffer);
+      bread(inode->addrs[NDIRECT+1], buffer);
     
     uint32_t first_level = file_sector/NINDIRECT;
     uint32_t second_level = file_sector%NINDIRECT;
@@ -485,12 +486,12 @@ find_block(struct inode *ip, uint32_t file_sector)
         free(buffer);
         return 0;
       }
-      block_write(fs_device,inode->addrs[NDIRECT+1],buffer);
+      bwrite(inode->addrs[NDIRECT+1],buffer);
       addr = buffer[first_level];
       memset(buffer,0,BLOCK_SECTOR_SIZE);
     }
     else
-      block_read(fs_device, addr, buffer);
+      bread(addr, buffer);
       
     
     if(buffer[second_level] == 0){
@@ -498,10 +499,10 @@ find_block(struct inode *ip, uint32_t file_sector)
         free(buffer);
         return 0;
       }
-      block_write(fs_device,addr,buffer);
+      bwrite(addr,buffer);
       addr = buffer[second_level];
       memset(buffer,0,BLOCK_SECTOR_SIZE);
-      block_write(fs_device,addr,buffer);
+      bwrite(addr,buffer);
     }
     else
       addr = buffer[second_level];
@@ -530,7 +531,7 @@ free_inode_data(struct inode *ip)
     }
   }
   if(inode->addrs[NDIRECT]){
-    block_read(fs_device, inode->addrs[NDIRECT], buffer);
+    bread(inode->addrs[NDIRECT], buffer);
     for(i=0; i<(int)NINDIRECT ;i++){
       if(buffer[i]){
         free_map_release(buffer[i], 1);
@@ -542,10 +543,10 @@ free_inode_data(struct inode *ip)
   if(inode->addrs[NDIRECT+1]){
     //PANIC("NEVER SHOULD HAVE COME HERE");
     buffer2 = malloc(BLOCK_SECTOR_SIZE);
-    block_read(fs_device, inode->addrs[NDIRECT+1], buffer);
+    bread(inode->addrs[NDIRECT+1], buffer);
     for(i=0; i<(int)NINDIRECT ;i++){
       if(buffer[i]){
-        block_read(fs_device, buffer[i], buffer2);
+        bread(buffer[i], buffer2);
         int j;
         for(j=0; j<(int)NINDIRECT; j++){
           if(buffer2[j]){

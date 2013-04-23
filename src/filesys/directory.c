@@ -8,7 +8,7 @@
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "filesys/free-map.h"
-static char* skipelem(char *path, char *name);
+static char* skipelem(char *path, char **name);
 static bool dir_isEmpty(struct dir *dir);
 
 
@@ -360,12 +360,12 @@ direntry_size(void)
    skipelem("a", name) = "", setting name = "a"
    skipelem("", name) = skipelem("////", name) = 0 */
 static char*
-skipelem(char *path, char *name)
+skipelem(char *path, char **name1)
 {
  // printf("length %d,%s\n",strlen(path),path);
   char *s;
   int len;
-
+  char *name = *name1;
   while(*path == '/')
     path++;
   if(*path == 0){
@@ -377,9 +377,8 @@ skipelem(char *path, char *name)
   while(*path != '/' && *path != 0)
     path++;
   len = path - s;
-  if(len >= NAME_MAX){
-    memmove(name, s, NAME_MAX);
-    name[NAME_MAX] = 0;
+  if(len > NAME_MAX){
+    *name1 = 0;
   }
   else {
     memmove(name, s, len);
@@ -419,7 +418,7 @@ get_name(char *path, int nameiparent, char *name)
   }
   
   ip = dir_get_inode(dir);
-  while((path = skipelem(path, name)) != 0){
+  while((path = skipelem(path, &name)) != 0){
    // printf("path is %s and name is %s\n",path,name);
 
     if(ip->data.type != T_DIR){
@@ -450,7 +449,7 @@ get_name(char *path, int nameiparent, char *name)
     inode_close(ip);
     return NULL;
   }
-  if(*name == 0 && next == NULL){
+  if(name == 0 || (*name == 0 && next == NULL)){
    // printf("input name empty\n");
     dir_close(dir);
     inode_close(ip);
