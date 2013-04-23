@@ -157,8 +157,7 @@ bitmap_set (struct bitmap *b, size_t idx, bool value)
 void
 bitmap_mark (struct bitmap *b, size_t bit_idx) 
 {
-  //printf("inside bitmark\n");
-	size_t idx = elem_idx (bit_idx);
+  size_t idx = elem_idx (bit_idx);
   elem_type mask = bit_mask (bit_idx);
 
   /* This is equivalent to `b->bits[idx] |= mask' except that it

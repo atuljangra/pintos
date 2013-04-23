@@ -14,7 +14,9 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "../lib/kernel/bitmap.h"
-
+#include "filesys/file.h"
+#include "filesys/bcache.h"
+#include "devices/timer.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
@@ -86,6 +88,8 @@ void fd_mem_free (void);
 void thread_wakeup (void);
 static tid_t allocate_tid (void);
 
+void filesys_thread (void *);
+void filesys_readahead_thread (void *);
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -769,7 +773,7 @@ unsigned add_file( struct file *f)
    struct fd_table_element *fd_elem = (struct fd_table_element *)malloc(sizeof (struct fd_table_element));
    fd_elem -> file_name = f;
    fd_elem -> fd = fd_next_available();
-//   printf ("am I here????????? %d %d  \t", fd_elem -> fd, thread_current () -> tid);
+//   printf ("am I here????????? %d \t", fd_elem -> fd);
    bitmap_mark (thread_current() -> fd_entry, fd_elem -> fd);
    list_push_back (thread_current() -> fd_table, &fd_elem -> file_elem);
    return fd_elem -> fd;
@@ -831,4 +835,65 @@ void fd_mem_free (void)
   }
   free (fd_table);
 }
-  
+
+void thread_filesys_init (void)
+{
+  // create the filesys thread which will flush the buffer cache periodically
+  thread_create ("Filesys", PRI_DEFAULT, filesys_thread, (void *)NULL);
+
+  /* Start the readahead thread */
+  thread_create ("Filesys_readahead", PRI_DEFAULT, filesys_readahead_thread, (void *) NULL);
+
+}
+
+// Function to flush the buffer cache table periodically
+void filesys_thread (void *arg UNUSED)
+{
+  uint64_t sleep_time = 1000;
+
+  while (true)
+  {
+    timer_sleep (sleep_time);
+    // Flush the buffer cache tablehrea
+    flush_buffer_cache ();
+    //~ printf ("flushed the bcache table \n");
+  }
+}
+
+// Function for filesys_readahead thread. This function maintains the list of
+// readahead requests and fetches them on context switch
+void filesys_readahead_thread (void *arg UNUSED)
+{
+  // initializations
+  lock_init (&readahead_lock);
+  list_init (&readahead_list);
+  cond_init (&readahead_condition);
+
+  while (true)
+  {
+    // Lock should be acquired before calling cond_wait, thus acquiring lock
+    lock_acquire (&readahead_lock);
+
+    // Condition is to wait until anyone puts something on the list of requested
+    // readaheads. If someone puts something, it'll signal us and we'll wake up.
+    // After waking up, we'll fulfil the request.
+    // NOTE: This is *needed* to be a while loop, it cannot be an if condition,
+    // i.e. if list is empty, then wait, because sending and receiving a signal
+    // are not atomic operations. Thus we need to recheck the condition.
+    while (list_empty (&readahead_list))
+      cond_wait (&readahead_condition, &readahead_lock);
+
+    // Pop the first request from the front and try to fulfill it
+    struct readahead_entry *rentry = 
+      list_entry (list_pop_front (&readahead_list), struct readahead_entry, elem);
+    fulfill_readahead (rentry -> bsector);
+
+    //~ printf ("Fulfilled a request with block %d \n", rentry -> bsector);
+    // Release the lock after fulfilling the request
+    lock_release (&readahead_lock);
+
+    // We are done with rentry, thus freeing it.
+    free (rentry);
+  }
+
+}

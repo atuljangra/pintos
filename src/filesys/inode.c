@@ -7,7 +7,7 @@
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
-#include "filesys/buffer.h"
+#include "filesys/bcache.h"
 
 
 static uint32_t find_block(struct inode *inode, uint32_t file_sector);
@@ -90,7 +90,8 @@ inode_create (block_sector_t sector, off_t length, int type)
         if(sectors_allocated[i] == 0)
           goto invalid;
       }
-      bwrite(sector, disk_inode);
+      // DOUBT
+      write_bcache (sector, disk_inode, 0, BLOCK_SECTOR_SIZE);
       success = true;
       
     }
@@ -117,6 +118,7 @@ inode_create (block_sector_t sector, off_t length, int type)
 struct inode *
 inode_open (block_sector_t sector)
 {
+  //~ printf (" In INODE OPEN sector : %d\n", sector);
   struct list_elem *e;
   struct inode *inode;
 
@@ -143,7 +145,7 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
-  bread (inode->sector, &inode->data);
+  read_bcache (inode -> sector, &inode -> data, 0, BLOCK_SECTOR_SIZE);
   return inode;
 }
 
@@ -231,24 +233,9 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       if (chunk_size <= 0)
         break;
 
-      if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
-        {
-          /* Read full sector directly into caller's buffer. */
-          bread(sector_idx, buffer + bytes_read);
-        }
-      else 
-        {
-          /* Read sector into bounce buffer, then partially copy
-             into caller's buffer. */
-          if (bounce == NULL) 
-            {
-              bounce = malloc (BLOCK_SECTOR_SIZE);
-              if (bounce == NULL)
-                break;
-            }
-          bread(sector_idx, bounce);
-          memcpy (buffer + bytes_read, bounce + sector_ofs, chunk_size);
-        }
+     
+      //~ printf ("inode read: not breaking, chunk %d, index %d \n", chunk_size, sector_idx); 
+      read_bcache (sector_idx, buffer + bytes_read, sector_ofs, chunk_size);
       
       /* Advance. */
       size -= chunk_size;
@@ -278,7 +265,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   
   if(inode_length(inode) < offset + size){
     (inode->data).length = offset + size;
-    bwrite(inode->sector,&inode->data);
+    write_bcache (inode->sector,&inode->data, 0, BLOCK_SECTOR_SIZE);
     //printf("new file size %d\n",(inode->data).length);
   }
 
@@ -302,32 +289,8 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       int chunk_size = size < min_left ? size : min_left;
       if (chunk_size <= 0)
         break;
-
-      if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
-        {
-          /* Write full sector directly to disk. */
-          bwrite(sector_idx, buffer + bytes_written);
-        }
-      else 
-        {
-          /* We need a bounce buffer. */
-          if (bounce == NULL) 
-            {
-              bounce = malloc (BLOCK_SECTOR_SIZE);
-              if (bounce == NULL)
-                break;
-            }
-
-          /* If the sector contains data before or after the chunk
-             we're writing, then we need to read in the sector
-             first.  Otherwise we start with a sector of all zeros. */
-          if (sector_ofs > 0 || chunk_size < sector_left) 
-            bread(sector_idx, bounce);
-          else
-            memset (bounce, 0, BLOCK_SECTOR_SIZE);
-          memcpy (bounce + sector_ofs, buffer + bytes_written, chunk_size);
-          bwrite(sector_idx, bounce);
-        }
+  
+      write_bcache (sector_idx, (void *) (buffer + bytes_written), sector_ofs, chunk_size);
 
       /* Advance. */
       size -= chunk_size;
@@ -410,11 +373,11 @@ find_block(struct inode *ip, uint32_t file_sector)
         return 0;
       }
       //printf("returning allocated sector %d\n",inode->addrs[file_sector]);
-      bwrite(ip->sector,inode);
+      write_bcache (ip->sector,inode, 0, BLOCK_SECTOR_SIZE);
       
       addr = inode->addrs[file_sector];
       memset(buffer,0,BLOCK_SECTOR_SIZE);
-      bwrite(addr,buffer);
+      write_bcache (addr,buffer, 0, BLOCK_SECTOR_SIZE);
 		}	
  
     free(buffer);
@@ -433,11 +396,12 @@ find_block(struct inode *ip, uint32_t file_sector)
         return 0;
       }
       
-      bwrite(ip->sector,inode);
+      write_bcache (ip->sector,inode, 0, BLOCK_SECTOR_SIZE);
       memset(buffer,0,BLOCK_SECTOR_SIZE);
     }
     else
-      bread(inode->addrs[NDIRECT], buffer);
+      read_bcache(inode->addrs[NDIRECT], buffer, 0, BLOCK_SECTOR_SIZE);
+
       
     if(buffer[file_sector] == 0){
       if(!free_map_allocate(1,&buffer[file_sector])){
@@ -445,11 +409,11 @@ find_block(struct inode *ip, uint32_t file_sector)
         return 0;
       }
         
-      bwrite(inode->addrs[NDIRECT],buffer);
+      write_bcache (inode->addrs[NDIRECT],buffer, 0, BLOCK_SECTOR_SIZE);
       
       addr = buffer[file_sector];
       memset(buffer,0,BLOCK_SECTOR_SIZE);
-      bwrite(addr,buffer);
+      write_bcache (addr,buffer, 0, BLOCK_SECTOR_SIZE);
     }
     else
       addr = buffer[file_sector];
@@ -470,11 +434,11 @@ find_block(struct inode *ip, uint32_t file_sector)
         free(buffer);
         return 0;
       }
-      bwrite(ip->sector,inode);
+      write_bcache (ip->sector,inode, 0, BLOCK_SECTOR_SIZE);
       memset(buffer,0,BLOCK_SECTOR_SIZE);
     }
     else
-      bread(inode->addrs[NDIRECT+1], buffer);
+      read_bcache (inode->addrs[NDIRECT+1], buffer, 0, BLOCK_SECTOR_SIZE);
     
     uint32_t first_level = file_sector/NINDIRECT;
     uint32_t second_level = file_sector%NINDIRECT;
@@ -486,12 +450,12 @@ find_block(struct inode *ip, uint32_t file_sector)
         free(buffer);
         return 0;
       }
-      bwrite(inode->addrs[NDIRECT+1],buffer);
+      write_bcache (inode->addrs[NDIRECT+1],buffer, 0, BLOCK_SECTOR_SIZE);
       addr = buffer[first_level];
       memset(buffer,0,BLOCK_SECTOR_SIZE);
     }
     else
-      bread(addr, buffer);
+      read_bcache (addr, buffer, 0, BLOCK_SECTOR_SIZE);
       
     
     if(buffer[second_level] == 0){
@@ -499,10 +463,10 @@ find_block(struct inode *ip, uint32_t file_sector)
         free(buffer);
         return 0;
       }
-      bwrite(addr,buffer);
+      write_bcache (addr,buffer, 0, BLOCK_SECTOR_SIZE);
       addr = buffer[second_level];
       memset(buffer,0,BLOCK_SECTOR_SIZE);
-      bwrite(addr,buffer);
+      write_bcache (addr,buffer, 0, BLOCK_SECTOR_SIZE);
     }
     else
       addr = buffer[second_level];
@@ -531,7 +495,7 @@ free_inode_data(struct inode *ip)
     }
   }
   if(inode->addrs[NDIRECT]){
-    bread(inode->addrs[NDIRECT], buffer);
+    read_bcache (inode->addrs[NDIRECT], buffer, 0, BLOCK_SECTOR_SIZE);
     for(i=0; i<(int)NINDIRECT ;i++){
       if(buffer[i]){
         free_map_release(buffer[i], 1);
@@ -543,10 +507,10 @@ free_inode_data(struct inode *ip)
   if(inode->addrs[NDIRECT+1]){
     //PANIC("NEVER SHOULD HAVE COME HERE");
     buffer2 = malloc(BLOCK_SECTOR_SIZE);
-    bread(inode->addrs[NDIRECT+1], buffer);
+    read_bcache (inode->addrs[NDIRECT+1], buffer, 0, BLOCK_SECTOR_SIZE);
     for(i=0; i<(int)NINDIRECT ;i++){
       if(buffer[i]){
-        bread(buffer[i], buffer2);
+        read_bcache (buffer[i], buffer2, 0, BLOCK_SECTOR_SIZE);
         int j;
         for(j=0; j<(int)NINDIRECT; j++){
           if(buffer2[j]){

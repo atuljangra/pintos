@@ -294,8 +294,7 @@ bool create (const char *file_name, unsigned initial_size)
     NOT_REACHED ();
   }
   result =  filesys_create (file_name, initial_size);
-  done:
-    lock_release(&file_lock);
+  lock_release(&file_lock);
   return result;
 }
 
@@ -498,8 +497,7 @@ isdir(int fd)
 
 int inumber(int fd)
 {
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   int result = 0;
   if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
       || (fd == 2 && thread_current() -> fd_std_err)
@@ -663,8 +661,7 @@ void exit (int status)
 
 tid_t exec (const char *file)
 {
-  while(!lock_try_acquire(&file_lock))
-    thread_yield();
+  lock_acquire(&file_lock);
   tid_t result;
 	bool valid = validate_buffer (file, "", PGSIZE, false);
   if (!valid)
