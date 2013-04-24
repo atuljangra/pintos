@@ -34,8 +34,10 @@ static block_sector_t
 byte_to_sector (struct inode *inode, off_t pos) 
 {
   ASSERT (inode != NULL);
-  if (pos < inode->data.length)
-    return find_block(inode, pos/BLOCK_SECTOR_SIZE);
+  if (pos < inode->data.length){
+    block_sector_t sector_id = find_block(inode, pos/BLOCK_SECTOR_SIZE);
+    return sector_id;
+  }
   else
     return 0;
 }
@@ -145,6 +147,7 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
+  lock_init (&inode -> lk);
   read_bcache (inode -> sector, &inode -> data, 0, BLOCK_SECTOR_SIZE);
   return inode;
 }
@@ -258,17 +261,42 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 {
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
-  uint8_t *bounce = NULL;
-
+  uint8_t *bounce = NULL;     
+  unsigned number_blocks = 0;
+  bool eof_flag = false;
   if (inode->deny_write_cnt)
     return 0;
   
+    
+  // ATUL, this should be done at the end of the write_at to avoid race at the
+  // file read and write when both are at eof.
   if(inode_length(inode) < offset + size){
+    if((inode->data).type == T_FILE)
+    {
+      lock_acquire (&inode -> lk);
+      eof_flag = true;
+    }
     (inode->data).length = offset + size;
     write_bcache (inode->sector,&inode->data, 0, BLOCK_SECTOR_SIZE);
-    //printf("new file size %d\n",(inode->data).length);
+   // printf("new file size %d\n",(inode->data).length);
   }
+  
+ /*
+  if (size > 0)
+  {
+    read_bcache (inode -> sector, (void *)(&number_blocks), 0, sizeof (unsigned));
 
+    if ((unsigned)( (size + offset)/ BLOCK_SECTOR_SIZE) >= number_blocks)                     
+    {
+      lock_acquire (&inode-> lk);
+      (inode -> data).length = offset + size;
+      write_bcache (inode -> sector, &inode -> data, 0, BLOCK_SECTOR_SIZE);
+      // release the lock after completely writing the data to the file,
+      // possible race condition
+      eof_flag = true;
+
+    }
+  }*/
   while (size > 0) 
     {
       /* Sector to write, starting byte offset within sector. */
@@ -297,6 +325,10 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       offset += chunk_size;
       bytes_written += chunk_size;
     }
+  
+  if (eof_flag)
+    lock_release (&inode -> lk);
+
   free (bounce);
   return bytes_written;
 }
@@ -525,4 +557,16 @@ free_inode_data(struct inode *ip)
     free(buffer2);
   }
   free(buffer);
+}
+
+void
+inode_lock (struct inode * inode)
+{
+  lock_acquire (&inode -> lk);
+}
+
+void
+inode_unlock (struct inode * inode)
+{
+  lock_release (&inode -> lk);
 }

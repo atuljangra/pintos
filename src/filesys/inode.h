@@ -6,6 +6,7 @@
 #include <list.h>
 #include "filesys/off_t.h"
 #include "devices/block.h"
+#include "threads/synch.h"
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
@@ -16,7 +17,10 @@
 #define MAXFILE (NDIRECT + NINDIRECT)
 
 struct bitmap;
-enum {T_EMPTY,T_FILE,T_DIR};
+enum
+  {
+    T_EMPTY,T_FILE,T_DIR
+  };
 
 
 /* On-disk inode.
@@ -39,8 +43,9 @@ struct inode
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
     struct inode_disk data;             /* Inode content. */
+    struct lock lk;                      /* per-inode lock */
   };
-
+                                                
 void inode_init (void);
 bool inode_create (block_sector_t, off_t,int type);
 struct inode *inode_open (block_sector_t);
@@ -55,4 +60,6 @@ void inode_allow_write (struct inode *);
 off_t inode_length (const struct inode *);
 bool inode_isremoved(struct inode *inode);
 bool inode_isDir(struct inode *inode);
+void inode_unlock (struct inode * inode);
+void inode_lock (struct inode * inode);
 #endif /* filesys/inode.h */

@@ -135,6 +135,10 @@ thread_start (void)
 
   /* Wait for the idle thread to initialize idle_thread. */
   sema_down (&idle_started);
+ 
+  /* Start the readahead thread */
+  thread_create ("Filesys_readahead", PRI_DEFAULT, filesys_readahead_thread, (void *) NULL);     
+  
 }
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -388,11 +392,11 @@ thread_exit (int exit_code)
   process_exit ();
 #endif
   
-  lock_acquire(&file_lock);
+//  lock_acquire(&file_lock);
   dir_close(thread_current()->cwd);
   file_close(thread_current()->current_executable);
   fd_mem_free();
-  lock_release(&file_lock);
+//  lock_release(&file_lock);
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it call schedule_tail(). */
@@ -840,10 +844,6 @@ void thread_filesys_init (void)
 {
   // create the filesys thread which will flush the buffer cache periodically
   thread_create ("Filesys", PRI_DEFAULT, filesys_thread, (void *)NULL);
-
-  /* Start the readahead thread */
-  thread_create ("Filesys_readahead", PRI_DEFAULT, filesys_readahead_thread, (void *) NULL);
-
 }
 
 // Function to flush the buffer cache table periodically

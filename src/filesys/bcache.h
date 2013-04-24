@@ -32,7 +32,7 @@ struct readahead_entry {
 };
 
 
-void print_my_ass ();
+void print_my_ass (void);
 /* For read ahead thread */
 struct lock readahead_lock;
 struct list readahead_list;

@@ -6,5 +6,5 @@
 #include "threads/synch.h"
 void syscall_init (void);
 /* global file lock*/
-struct lock file_lock;
+// struct lock file_lock;
 #endif /* userprog/syscall.h */

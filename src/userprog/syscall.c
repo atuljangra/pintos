@@ -114,7 +114,7 @@ void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-  lock_init (&file_lock);
+ // lock_init (&file_lock);
 }
 
 /*
@@ -125,7 +125,7 @@ syscall_init (void)
 int write (int fd, const void *buffer, unsigned length)
 {
   int result;
-  lock_acquire(&file_lock);
+ // lock_acquire(&file_lock);
   if (fd < 0 || (fd == STDIN_FILENO && thread_current() -> fd_std_in) 
       || (fd == 2 && thread_current() -> fd_std_err))
   {
@@ -135,7 +135,7 @@ int write (int fd, const void *buffer, unsigned length)
   bool valid = validate_buffer (buffer, NULL, length, false);
   if (!valid)
   {
-    lock_release(&file_lock);
+  //  lock_release(&file_lock);
     thread_exit (-1);
   }
   /* write to output */
@@ -157,7 +157,7 @@ int write (int fd, const void *buffer, unsigned length)
   {
     if (fd < 0){
       // palloc_free_page (valid_buffer);
-      lock_release (&file_lock);
+    //  lock_release (&file_lock);
     {
       result = 0;
       goto done;
@@ -174,7 +174,7 @@ int write (int fd, const void *buffer, unsigned length)
 //    printf (" WRITTEN : %d", result);
   }
   done:
-    lock_release(&file_lock);
+   // lock_release(&file_lock);
 //    printf (" Wrote: %d \t", result);
 
   return result;
@@ -185,7 +185,7 @@ int write (int fd, const void *buffer, unsigned length)
  */
 int open (const char *file)
 {
-  lock_acquire(&file_lock);
+ // lock_acquire(&file_lock);
   bool valid;
   int fd = 0;
   struct file* file_open;
@@ -193,7 +193,7 @@ int open (const char *file)
 
   if (!valid)
   {
-    lock_release(&file_lock);
+  //  lock_release(&file_lock);
     thread_exit (-1);
   }
   file_open = filesys_open (file);
@@ -204,7 +204,7 @@ int open (const char *file)
   }
   fd = add_file(file_open);
   done:
-    lock_release(&file_lock);
+   // lock_release(&file_lock);
   return fd;
 }
 
@@ -214,33 +214,34 @@ int open (const char *file)
  */
 void close (int fd)
 {
-  lock_acquire(&file_lock);
+ // lock_acquire(&file_lock);
   if (fd < 0)
-  goto done;
+  //goto done;
+  return;
   if ((fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
       || (fd == STDIN_FILENO && thread_current() -> fd_std_in) 
       || (fd == 2 && thread_current() -> fd_std_err)){
-        lock_release(&file_lock);
+       // lock_release(&file_lock);
         thread_exit(-1);
         
   }
   
   struct fd_table_element *fd_elem = find_file (fd);
   if (fd_elem == NULL)
-    goto done;
+  //  goto done;
+    return;
   else
   {
     file_close (fd_elem -> file_name);
     list_remove (&fd_elem -> file_elem);
   }
     entry_remove (fd);
-  done:
-    lock_release(&file_lock);
+   // lock_release(&file_lock);
 }
 
 int read (int fd, void* buffer, unsigned length)
 {
-  lock_acquire(&file_lock);
+//  lock_acquire(&file_lock);
   int result = 0;
   if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
       || (fd == 2 && thread_current() -> fd_std_err))
@@ -252,7 +253,7 @@ int read (int fd, void* buffer, unsigned length)
   valid = validate_buffer (buffer, NULL, length, true);
   if (!valid)
   {
-    lock_release (&file_lock);
+   // lock_release (&file_lock);
     thread_exit (-1);
     NOT_REACHED ();
   }
@@ -277,31 +278,31 @@ int read (int fd, void* buffer, unsigned length)
   result = file_read (read, buffer, length);
 
   done:
-    lock_release(&file_lock);
+   // lock_release(&file_lock);
   return result;
 }
 
 /* thread exit? is it that serious? */
 bool create (const char *file_name, unsigned initial_size)
 {
-  lock_acquire(&file_lock);
+ // lock_acquire(&file_lock);
   bool result, valid; 
   valid = validate_buffer (file_name, "", PGSIZE, false);
   if (!valid || strnlen (file_name, 32) == 0)
   {
-    lock_release (&file_lock);
+   // lock_release (&file_lock);
     thread_exit (-1);
     NOT_REACHED ();
   }
   result =  filesys_create (file_name, initial_size);
-  lock_release(&file_lock);
+ // lock_release(&file_lock);
   return result;
 }
 
 bool remove (const char *file_name)
 {
 /*  printf("remove %s\n", file_name);*/
-  lock_acquire(&file_lock);
+ // lock_acquire(&file_lock);
   bool result, valid;
   valid = validate_buffer (file_name, "", PGSIZE, false);
   if (!valid)
@@ -311,13 +312,13 @@ bool remove (const char *file_name)
   }
   result = filesys_remove (file_name);
   done:
-    lock_release(&file_lock);
+   // lock_release(&file_lock);
   return result;
 }
 
 int filesize (int fd)
 {
-  lock_acquire(&file_lock);
+ // lock_acquire(&file_lock);
   int result;
   if (fd < 0)
   {
@@ -332,26 +333,26 @@ int filesize (int fd)
   }
   result = file_length (fd_elem -> file_name);
   done:
-    lock_release(&file_lock);
+   // lock_release(&file_lock);
   return result;
 }
 
 void seek (int fd, unsigned position)
 {
-  lock_acquire(&file_lock);
+ // lock_acquire(&file_lock);
   if ( fd < 0)
-    goto done;
-//    printf ("am I here???"); 
+   // goto done;
+   return;
+   //    printf ("am I here???"); 
     struct fd_table_element *fd_elem = find_file (fd);
     if (fd_elem != NULL)
       file_seek (fd_elem -> file_name, position);
-  done:
-  lock_release(&file_lock);  
+ // lock_release(&file_lock);  
 }
 
 unsigned tell (int fd)
 {
-  lock_acquire(&file_lock);
+ // lock_acquire(&file_lock);
   unsigned result;
   if (fd < -1)
   {
@@ -366,7 +367,7 @@ unsigned tell (int fd)
   }
   result = file_tell (fd_elem -> file_name);
   done:
-    lock_release(&file_lock);
+  //  lock_release(&file_lock);
   return result;
 
 }
@@ -374,7 +375,7 @@ unsigned tell (int fd)
 bool 
 chdir(const char *file_name)
 {
-  lock_acquire(&file_lock);
+//  lock_acquire(&file_lock);
   bool result, valid;
   valid = validate_buffer (file_name, "", PGSIZE, false);
   if (!valid)
@@ -385,14 +386,14 @@ chdir(const char *file_name)
   result = dir_chdir(file_name);
 
   done:
-    lock_release(&file_lock);
+  //  lock_release(&file_lock);
   return result;
 }
 
 bool 
 mkdir(const char *file_name)
 {
-  lock_acquire(&file_lock);
+//  lock_acquire(&file_lock);
   bool result, valid;
   valid = validate_buffer (file_name, "", PGSIZE, false);
   if (!valid)
@@ -402,7 +403,7 @@ mkdir(const char *file_name)
   }
   result = dir_mkdir(file_name);
   done:
-    lock_release(&file_lock);
+   // lock_release(&file_lock);
   return result;
 }
 
@@ -411,7 +412,7 @@ readdir(int fd, char *file_name)
 {
   //printf("inside readdir\n");
 
-  lock_acquire(&file_lock);
+ // lock_acquire(&file_lock);
   bool result = 0;
   if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
       || (fd == 2 && thread_current() -> fd_std_err)
@@ -425,7 +426,7 @@ readdir(int fd, char *file_name)
   if (!valid)
   {
     printf("buffer invalid\n");
-    lock_release (&file_lock);
+  //  lock_release (&file_lock);
     thread_exit (-1);
     NOT_REACHED ();
   }
@@ -459,7 +460,7 @@ readdir(int fd, char *file_name)
   }
   done:
   //dir_close(dir);
-  lock_release(&file_lock);
+//  lock_release(&file_lock);
     
   return result;
   
@@ -468,7 +469,7 @@ readdir(int fd, char *file_name)
 bool
 isdir(int fd)
 {
-  lock_acquire(&file_lock);
+//  lock_acquire(&file_lock);
   bool result = false;
   if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
       || (fd == 2 && thread_current() -> fd_std_err)
@@ -491,13 +492,13 @@ isdir(int fd)
     result = true;
   
   done:
-    lock_release(&file_lock);
+   // lock_release(&file_lock);
   return result;
 }
 
 int inumber(int fd)
 {
-  lock_acquire(&file_lock);
+//  lock_acquire(&file_lock);
   int result = 0;
   if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
       || (fd == 2 && thread_current() -> fd_std_err)
@@ -519,7 +520,7 @@ int inumber(int fd)
   struct inode *inode = file_get_inode(read);
   result = inode->sector;
   done:
-    lock_release(&file_lock);
+  //  lock_release(&file_lock);
   return result;
 }
 static void
@@ -661,17 +662,18 @@ void exit (int status)
 
 tid_t exec (const char *file)
 {
-  lock_acquire(&file_lock);
+//  lock_acquire(&file_lock);
   tid_t result;
 	bool valid = validate_buffer (file, "", PGSIZE, false);
   if (!valid)
   {
-    lock_release(&file_lock);  
+ //   lock_release(&file_lock);  
+    //printf ("Exec: not valid %s \n");
     on_pgfault();
     NOT_REACHED();
   }
 	result = process_exec (file);
-  lock_release(&file_lock);  
+//  lock_release(&file_lock);  
   return result;
 }
 
