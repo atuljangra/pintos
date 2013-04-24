@@ -224,7 +224,7 @@ dir_remove (struct dir *dir, const char *name)
   if (inode == NULL)
     goto done;
 
-  if(inode->data.type == T_DIR && !dir_isEmpty(dir_open(inode))){
+  if(inode_isDir(inode) && !dir_isEmpty(dir_open(inode))){
     goto done;
   }
   
@@ -429,7 +429,7 @@ get_name(char *path, int nameiparent, char *name)
   while((path = skipelem(path, &name)) != 0){
    // printf("path is %s and name is %s\n",path,name);
 
-    if(ip->data.type != T_DIR){
+    if(!inode_isDir(ip)){
       dir_close(dir);
       inode_close(ip);
       return NULL;

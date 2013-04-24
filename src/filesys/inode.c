@@ -10,9 +10,9 @@
 #include "filesys/bcache.h"
 
 
-static uint32_t find_block(struct inode *inode, uint32_t file_sector);
-static void free_inode_data(struct inode *ip);
-
+static uint32_t find_block(struct inode_disk *inode, block_sector_t sector, uint32_t file_sector);
+static void free_inode_data(struct inode_disk *inode);
+static void inode_change_length(struct inode *inode,off_t length);
 
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
@@ -34,13 +34,16 @@ static block_sector_t
 byte_to_sector (struct inode *inode, off_t pos) 
 {
   bool eof_flag = false;
-  if((inode->data).type == T_FILE)
+  if(!inode_isDir(inode))
   {
     lock_acquire (&inode -> lk);
     eof_flag = true;
   }
-  block_sector_t sector_id = find_block(inode, pos/BLOCK_SECTOR_SIZE);
-
+  struct inode_disk *disk_inode = malloc(sizeof(struct inode_disk));
+  read_bcache(inode->sector,disk_inode,0,sizeof (struct inode_disk));
+  block_sector_t sector_id = find_block(disk_inode, inode->sector, pos/BLOCK_SECTOR_SIZE);
+  free(disk_inode);
+  
   if (eof_flag)
     lock_release (&inode -> lk);
     
@@ -79,9 +82,9 @@ inode_create (block_sector_t sector, off_t length, int type)
 
   ASSERT (length >= 0);
   struct inode *inode = malloc(sizeof(struct inode));
-  memset(&inode->data,0,BLOCK_SECTOR_SIZE);
   inode->sector = sector;
-  struct inode_disk *disk_inode = &inode->data;
+  
+
   /* If this assertion fails, the inode structure is not exactly
      one sector in size, and you should fix that. */
 
@@ -90,27 +93,38 @@ inode_create (block_sector_t sector, off_t length, int type)
   uint32_t *sectors_allocated;
   if (inode != NULL)
     {
+      struct inode_disk *disk_inode = malloc(sizeof(struct inode_disk));
+      memset(disk_inode,0,BLOCK_SECTOR_SIZE);
       sectors = bytes_to_sectors (length);
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
       disk_inode->type = type;
+      write_bcache (sector, disk_inode, 0, BLOCK_SECTOR_SIZE);
+      free (disk_inode);
+      
       sectors_allocated = malloc((size_t)sectors*sizeof(uint32_t));
       
       //printf("sectors %d\n",sectors);
+      struct inode_disk *ip = malloc(sizeof(struct inode_disk));
       for(i=0; i<sectors; i++){
-        sectors_allocated[i] = find_block(inode, i);
+        read_bcache(inode->sector, ip,0,BLOCK_SECTOR_SIZE);
+        sectors_allocated[i] = find_block(ip, inode->sector, i);
         //ASSERT((inode->data).addrs[i] == sectors_allocated[i]);
         //printf("allocted sector %d\n",sectors_allocated[i]);
-        if(sectors_allocated[i] == 0)
+        if(sectors_allocated[i] == 0){
+          free(ip);
           goto invalid;
+        }
       }
+      free(ip);
       // DOUBT
-      write_bcache (sector, disk_inode, 0, BLOCK_SECTOR_SIZE);
+
       success = true;
       
     }
   ASSERT(success);
  // printf("creation done\n");
+ ;
   free (inode);
   return success;
   
@@ -122,6 +136,7 @@ inode_create (block_sector_t sector, off_t length, int type)
       break;
     free_map_release(sectors_allocated[i],1);
   }
+
   free(inode);
   return false;
 }
@@ -160,7 +175,7 @@ inode_open (block_sector_t sector)
   inode->deny_write_cnt = 0;
   inode->removed = false;
   lock_init (&inode -> lk);
-  read_bcache (inode -> sector, &inode -> data, 0, BLOCK_SECTOR_SIZE);
+  //read_bcache (inode -> sector, &inode -> data, 0, BLOCK_SECTOR_SIZE);
   return inode;
 }
 
@@ -201,11 +216,15 @@ inode_close (struct inode *inode)
       /* Deallocate blocks if removed. */
       if (inode->removed) 
         {
-          free_map_release (inode->sector, 1);
           /*free_map_release (inode->data.start,
                             bytes_to_sectors (inode->data.length)); 
           */
-          free_inode_data(inode);
+          struct inode_disk *ip = malloc(sizeof(struct inode_disk));
+          read_bcache(inode->sector,ip,0,BLOCK_SECTOR_SIZE);
+          free_inode_data(ip);
+          free(ip);
+          
+          free_map_release (inode->sector, 1);
         }
      
       inode_unlock(inode);
@@ -297,7 +316,6 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
   uint8_t *bounce = NULL;     
-  unsigned number_blocks = 0;
   bool eof_flag = false;
   off_t initial_offset = offset;
   off_t initial_size = size;
@@ -358,14 +376,14 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
 
   if(inode_length(inode) < initial_offset + initial_size){
-    if((inode->data).type == T_FILE)
+    if(!inode_isDir(inode))
     {
       lock_acquire (&inode -> lk);
       eof_flag = true;
     }
  
-    (inode->data).length = initial_offset + initial_size;
-    write_bcache (inode->sector,&inode->data, 0, BLOCK_SECTOR_SIZE);
+    inode_change_length(inode, initial_offset + initial_size);
+    //write_bcache (inode->sector,&inode->data, 0, BLOCK_SECTOR_SIZE);
 
     if (eof_flag)
       lock_release (&inode -> lk);
@@ -401,7 +419,9 @@ inode_allow_write (struct inode *inode)
 off_t
 inode_length (const struct inode *inode)
 {
-  return inode->data.length;
+  off_t length;
+  read_bcache (inode -> sector, (void *)&length, sizeof(int), sizeof (off_t));
+  return length;
 }
 
 bool 
@@ -414,11 +434,20 @@ inode_isremoved(struct inode *inode)
 bool
 inode_isDir(struct inode *inode)
 {
-  if((inode->data).type == T_DIR)
+  int type;
+  read_bcache (inode -> sector, (void *)&type, 0, sizeof (int));
+  if(type == T_DIR)
     return true;
   return false;
 }
 
+static void 
+inode_change_length(struct inode *inode, off_t length)
+{
+//  (inode->data).length = length;
+  write_bcache (inode -> sector, (void *)&length, sizeof(int), sizeof (off_t));
+
+}
 
 /* 
   The contents (data) associated with each inode is stored
@@ -431,14 +460,14 @@ inode_isDir(struct inode *inode)
   If there is no such block, new block is allocated . This assumes 
   that size of file is not less than the file_sector*sector_size */
 static uint32_t
-find_block(struct inode *ip, uint32_t file_sector)
+find_block(struct inode_disk *inode, block_sector_t sector, uint32_t file_sector)
 {
   //ASSERT((uint32_t)(ip->data).length > file_sector*BLOCK_SECTOR_SIZE);
   
   //printf("in find_block %d\n",file_sector);
   
   uint32_t addr, *buffer = malloc(BLOCK_SECTOR_SIZE);
-  struct inode_disk *inode = &ip->data;
+  //struct inode_disk *inode = &ip->data;
 
 	//cprintf("block number required: %d\n", bn);
   if(file_sector < NDIRECT){
@@ -449,7 +478,7 @@ find_block(struct inode *ip, uint32_t file_sector)
         return 0;
       }
       //printf("returning allocated sector %d\n",inode->addrs[file_sector]);
-      write_bcache (ip->sector,inode, 0, BLOCK_SECTOR_SIZE);
+      write_bcache (sector,inode, 0, BLOCK_SECTOR_SIZE);
       
       addr = inode->addrs[file_sector];
       memset(buffer,0,BLOCK_SECTOR_SIZE);
@@ -472,7 +501,7 @@ find_block(struct inode *ip, uint32_t file_sector)
         return 0;
       }
       
-      write_bcache (ip->sector,inode, 0, BLOCK_SECTOR_SIZE);
+      write_bcache (sector,inode, 0, BLOCK_SECTOR_SIZE);
       memset(buffer,0,BLOCK_SECTOR_SIZE);
     }
     else
@@ -510,7 +539,7 @@ find_block(struct inode *ip, uint32_t file_sector)
         free(buffer);
         return 0;
       }
-      write_bcache (ip->sector,inode, 0, BLOCK_SECTOR_SIZE);
+      write_bcache (sector,inode, 0, BLOCK_SECTOR_SIZE);
       memset(buffer,0,BLOCK_SECTOR_SIZE);
     }
     else
@@ -557,9 +586,9 @@ find_block(struct inode *ip, uint32_t file_sector)
    data. It parses through all direct,indirect and doubly indirect 
    links to free the data blocks */
 static void
-free_inode_data(struct inode *ip)
+free_inode_data(struct inode_disk *inode)
 {
-  struct inode_disk *inode = &ip->data;
+
   int i;
   uint32_t *buffer, *buffer2;
   buffer = malloc(BLOCK_SECTOR_SIZE);
