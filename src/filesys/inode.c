@@ -33,8 +33,18 @@ bytes_to_sectors (off_t size)
 static block_sector_t
 byte_to_sector (struct inode *inode, off_t pos) 
 {
+  bool eof_flag = false;
+  if((inode->data).type == T_FILE)
+  {
+    lock_acquire (&inode -> lk);
+    eof_flag = true;
+  }
   block_sector_t sector_id = find_block(inode, pos/BLOCK_SECTOR_SIZE);
-    return sector_id;
+
+  if (eof_flag)
+    lock_release (&inode -> lk);
+    
+  return sector_id;
   /*ASSERT (inode != NULL);
   if (pos < inode->data.length){
     block_sector_t sector_id = find_block(inode, pos/BLOCK_SECTOR_SIZE);
@@ -158,8 +168,9 @@ inode_open (block_sector_t sector)
 struct inode *
 inode_reopen (struct inode *inode)
 {
-  if (inode != NULL)
+  if (inode != NULL){
     inode->open_cnt++;
+  }
   return inode;
 }
 
@@ -181,6 +192,7 @@ inode_close (struct inode *inode)
     return;
 
   /* Release resources if this was the last opener. */
+  inode_lock(inode);
   if (--inode->open_cnt == 0)
     {
       /* Remove from inode list and release lock. */
@@ -195,9 +207,15 @@ inode_close (struct inode *inode)
           */
           free_inode_data(inode);
         }
-
+     
+      inode_unlock(inode);
+ 
       free (inode); 
+      return;
     }
+
+  inode_unlock(inode);
+
 }
 
 /* Marks INODE to be deleted when it is closed by the last caller who
@@ -206,7 +224,9 @@ void
 inode_remove (struct inode *inode) 
 {
   ASSERT (inode != NULL);
+  inode_lock(inode);
   inode->removed = true;
+  inode_unlock(inode);
 }
 
 /* Reads SIZE bytes from INODE into BUFFER, starting at position OFFSET.
@@ -218,7 +238,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
-    bool eof_flag = false;
+
   /*if((inode->data).type == T_FILE)
   {
     lock_acquire (&inode -> lk);
@@ -285,11 +305,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   if (inode->deny_write_cnt)
     return 0;
   
-  if((inode->data).type == T_FILE)
-    {
-      lock_acquire (&inode -> lk);
-      eof_flag = true;
-    }
+
 
   // ATUL, this should be done at the end of the write_at to avoid race at the
   // file read and write when both are at eof.
@@ -342,19 +358,20 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
 
   if(inode_length(inode) < initial_offset + initial_size){
-    /*if((inode->data).type == T_FILE)
+    if((inode->data).type == T_FILE)
     {
       lock_acquire (&inode -> lk);
       eof_flag = true;
-    }*/
+    }
  
     (inode->data).length = initial_offset + initial_size;
     write_bcache (inode->sector,&inode->data, 0, BLOCK_SECTOR_SIZE);
-   
+
+    if (eof_flag)
+      lock_release (&inode -> lk);
   }
   
-  if (eof_flag)
-    lock_release (&inode -> lk);
+
 
   free (bounce);
   return bytes_written;
