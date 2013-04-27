@@ -63,7 +63,7 @@ void init_bcache ()
 // to avoid race conditions, as done in xv6
 int find_sector (block_sector_t blockid, int flag)
 {
-  lock_acquire (&bcache_lock);
+  //lock_acquire (&bcache_lock);
   int i = 0;
   requested ++;
   for (i = 0; i < BUFFER_CACHE_SIZE; i++)
@@ -78,14 +78,14 @@ int find_sector (block_sector_t blockid, int flag)
       if (flag == FLAG_WRITE)
         bcache[i] -> write++;
 
-      lock_release (&bcache_lock);
+      //lock_release (&bcache_lock);
       hit ++;
       return i;
     }
   }
 
   miss++;
-  lock_release (&bcache_lock);
+  //lock_release (&bcache_lock);
   return -1;
 }
 
@@ -93,7 +93,7 @@ int find_sector (block_sector_t blockid, int flag)
 size_t add_bcache (block_sector_t blockid, int flag)
 {
 
-  lock_acquire (&bcache_lock);
+  //lock_acquire (&bcache_lock);
   // Find a free entry in the bitmap table
   size_t free_entry = bitmap_scan (bcache_table, 0, 1, false);
 
@@ -123,7 +123,7 @@ size_t add_bcache (block_sector_t blockid, int flag)
   if (flag == FLAG_WRITE)
     bcache[free_entry] -> write ++;
 
-  lock_release (&bcache_lock);
+  //lock_release (&bcache_lock);
   return free_entry;
 }
 
@@ -134,6 +134,7 @@ void read_bcache (block_sector_t blockid, void *buffer, off_t offset, int size)
   ASSERT (offset < BLOCK_SECTOR_SIZE);
   //~ printf ("Reading bcache at %d, offset %d, size %d \n", blockid, offset, size);
 
+  lock_acquire(&bcache_lock);
   // flag is 0 as it is a read access
   int entry = find_sector (blockid, FLAG_READ);
 
@@ -143,6 +144,7 @@ void read_bcache (block_sector_t blockid, void *buffer, off_t offset, int size)
   if (entry == -1)
   {
     entry = add_bcache (blockid, FLAG_READ);
+    lock_release(&bcache_lock);
     // bcache[entry] -> read++;
     //~ printf ("bcache read: new entry is %d \n", entry);
 
@@ -153,6 +155,8 @@ void read_bcache (block_sector_t blockid, void *buffer, off_t offset, int size)
     if (blockid < block_size (fs_device) - 1)
       request_readahead (blockid + 1);
   }
+  else
+    lock_release(&bcache_lock);
 
   // Copying contents into the requested buffer
   memcpy (buffer, (bcache[entry] -> kaddr + offset), size);
@@ -171,6 +175,7 @@ void write_bcache (block_sector_t blockid, void *buffer, int offset, int size)
   ASSERT (offset < BLOCK_SECTOR_SIZE);
   //~ printf ("Writing bcache at %d, offset %d, size %d buffer %s \n", blockid, offset, size, buffer);
 
+  lock_acquire(&bcache_lock);
   // flag is 1 as it is a write access
   int entry = find_sector (blockid, FLAG_WRITE);
 
@@ -181,12 +186,14 @@ void write_bcache (block_sector_t blockid, void *buffer, int offset, int size)
     entry = add_bcache (blockid, FLAG_WRITE);
     // Register as writer process
     // bcache[entry] -> write++;i
-   
+    lock_release(&bcache_lock);
+
     //TODO add comment
     if (blockid < block_size (fs_device) - 1)
       request_readahead (blockid + 1);
   }
-
+  else
+    lock_release(&bcache_lock);
   // Copying contents into the requested buffer
   memcpy ((bcache[entry] -> kaddr + offset), buffer, size);
 
@@ -264,8 +271,10 @@ void flush_buffer_cache ()
 void fulfill_readahead (block_sector_t blockid)
 {
   //If not already in cache, add it into the cache. 
+  lock_acquire(&bcache_lock);
   if (find_sector (blockid, FLAG_NONE) == -1)
     add_bcache (blockid, FLAG_NONE);
+  lock_release(&bcache_lock);
   // Otherwise we are good, so nothing to do at all
 }
 

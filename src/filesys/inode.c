@@ -179,9 +179,11 @@ struct inode *
 inode_reopen (struct inode *inode)
 {
  
+  lock_acquire(&inode->lk);
   if (inode != NULL){
     inode->open_cnt++;
   }
+  lock_release(&inode->lk);
   return inode;
 }
 
