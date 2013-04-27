@@ -138,8 +138,17 @@ dir_lookup (const struct dir *dir, const char *name,
   ASSERT (name != NULL);
 
   inode_lock (dir -> inode);
-  if (lookup (dir, name, &e, NULL))
+  if (lookup (dir, name, &e, NULL)){
+    
+    /* Inode open cannot be called if trying to open cwd as reopen 
+       tries to reaquire lock on directory inode */
+    if(inode_get_inumber(dir->inode) == e.inode_sector){
+      inode_unlock (dir -> inode);
+      *inode = inode_reopen (dir->inode);
+      return *inode != NULL;
+    }
     *inode = inode_open (e.inode_sector);
+  }
   else
     *inode = NULL;
 
@@ -219,7 +228,12 @@ dir_remove (struct dir *dir, const char *name)
   if (!lookup (dir, name, &e, &ofs))
     goto done;
 
-  /* Open inode. */
+  /* Don't allow removal of cwd */
+  if(inode_get_inumber(dir->inode) == e.inode_sector)
+    goto done;
+  
+  /* Open inode. This must not be called to open the directory 
+     as it will try to reaquire lock on directory */
   inode = inode_open (e.inode_sector);
   if (inode == NULL)
     goto done;
@@ -251,15 +265,18 @@ bool
 dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
   struct dir_entry e;
+  inode_lock (dir -> inode);
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e) 
   {
     dir->pos += sizeof e;
     if (e.in_use)
     {
       strlcpy (name, e.name, NAME_MAX + 1);
+      inode_unlock (dir -> inode);
       return true;
     } 
   }
+  inode_unlock (dir -> inode);
   return false;
 }
 
@@ -348,8 +365,10 @@ void
 dir_seek (struct dir *dir,off_t pos)
 {
   ASSERT(dir != NULL);
+  lock_acquire(&dir_get_inode(dir)->lk);
   if(pos > 0)
     dir->pos = pos;
+  lock_release(&dir_get_inode(dir)->lk);
 }
 
 size_t 

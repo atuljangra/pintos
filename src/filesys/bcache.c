@@ -122,7 +122,7 @@ size_t add_bcache (block_sector_t blockid, int flag)
     bcache[free_entry] -> read ++;
   if (flag == FLAG_WRITE)
     bcache[free_entry] -> write ++;
-  
+
   lock_release (&bcache_lock);
   return free_entry;
 }
@@ -157,8 +157,10 @@ void read_bcache (block_sector_t blockid, void *buffer, off_t offset, int size)
   // Copying contents into the requested buffer
   memcpy (buffer, (bcache[entry] -> kaddr + offset), size);
   //~ printf ("sector %d buffer %s odd: %s\n", blockid,  buffer, (bcache[entry] -> kaddr + offset));
+  lock_acquire(&bcache_lock);
   bcache[entry] -> accessed = true;
   bcache[entry] -> read--;
+  lock_release(&bcache_lock);
 
 }
 
@@ -182,17 +184,18 @@ void write_bcache (block_sector_t blockid, void *buffer, int offset, int size)
    
     //TODO add comment
     if (blockid < block_size (fs_device) - 1)
-    request_readahead (blockid + 1);
+      request_readahead (blockid + 1);
   }
 
   // Copying contents into the requested buffer
   memcpy ((bcache[entry] -> kaddr + offset), buffer, size);
 
+  lock_acquire(&bcache_lock);
   bcache[entry] -> accessed = true;
   bcache[entry] -> dirty = true;
 
-  // End write
   bcache[entry] -> write--;
+  lock_release(&bcache_lock);
 
 }
 

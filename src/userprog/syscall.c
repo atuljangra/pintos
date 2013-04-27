@@ -117,11 +117,10 @@ syscall_init (void)
  // lock_init (&file_lock);
 }
 
-/*
- * return: -1 if buffer not valid,
- * 0 if file not valid
- * otherwise RESULT (actual size that is written
- */
+/*return: -1 if buffer not valid,
+  0 if file not valid
+  otherwise RESULT (actual size that is written
+  If the fd corresponds to directory then it must fail */
 int write (int fd, const void *buffer, unsigned length)
 {
   int result;
@@ -170,6 +169,10 @@ int write (int fd, const void *buffer, unsigned length)
       goto done;
     }
     struct file *write = fd_elem -> file_name;
+    if(inode_isDir(file_get_inode(write))){
+      result = -1;
+      goto done;
+    }
     result = file_write (write, buffer, length);
 //    printf (" WRITTEN : %d", result);
   }
@@ -239,6 +242,7 @@ void close (int fd)
    // lock_release(&file_lock);
 }
 
+/* If the fd corresponds to directory then it must fail */ 
 int read (int fd, void* buffer, unsigned length)
 {
 //  lock_acquire(&file_lock);
@@ -270,6 +274,12 @@ int read (int fd, void* buffer, unsigned length)
   if (fd_elem == NULL)
     goto done;
   struct file * read = fd_elem -> file_name;
+  
+  if(inode_isDir(file_get_inode(read))){
+      result = -1;
+      goto done;
+  }
+  
   if (read == NULL)
   {
       result = -1;
