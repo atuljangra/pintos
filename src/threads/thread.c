@@ -886,11 +886,12 @@ void filesys_readahead_thread (void *arg UNUSED)
     // Pop the first request from the front and try to fulfill it
     struct readahead_entry *rentry = 
       list_entry (list_pop_front (&readahead_list), struct readahead_entry, elem);
+    lock_release (&readahead_lock);
     fulfill_readahead (rentry -> bsector);
 
     //~ printf ("Fulfilled a request with block %d \n", rentry -> bsector);
     // Release the lock after fulfilling the request
-    lock_release (&readahead_lock);
+
 
     // We are done with rentry, thus freeing it.
     free (rentry);

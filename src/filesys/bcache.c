@@ -152,8 +152,8 @@ void read_bcache (block_sector_t blockid, void *buffer, off_t offset, int size)
     // we need to add the next block to the global readahead list, i.e. we need
     // to request a readahead.
     // IF this is not the last block, then request readahead
-    if (blockid < block_size (fs_device) - 1)
-      request_readahead (blockid + 1);
+    //if (blockid < block_size (fs_device) - 1)
+      //request_readahead (blockid + 1);
   }
   else
     lock_release(&bcache_lock);
@@ -189,8 +189,8 @@ void write_bcache (block_sector_t blockid, void *buffer, int offset, int size)
     lock_release(&bcache_lock);
 
     //TODO add comment
-    if (blockid < block_size (fs_device) - 1)
-      request_readahead (blockid + 1);
+    //if (blockid < block_size (fs_device) - 1)
+      //request_readahead (blockid + 1);
   }
   else
     lock_release(&bcache_lock);
@@ -222,6 +222,7 @@ void writeback (int index)
     block_write (fs_device, bcache[index] -> bsector, bcache[index] -> kaddr);
 
   //End write
+  bcache[index]->dirty = false;
   bcache[index] -> write --;
 }
 

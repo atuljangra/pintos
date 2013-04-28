@@ -147,11 +147,12 @@ inode_open (block_sector_t sector)
     inode = list_entry (e, struct inode, elem);
     if (inode->sector == sector) 
       {
-        inode_reopen (inode);
         lock_release(&open_inode_lock);
+        inode_reopen (inode);
         return inode; 
       }
   }
+  lock_release(&open_inode_lock);
   
 
   /* Allocate memory. */
@@ -167,6 +168,8 @@ inode_open (block_sector_t sector)
   inode->deny_write_cnt = 0;
   inode->removed = false;
   lock_init (&inode -> lk);
+  
+  lock_acquire(&open_inode_lock);
   list_push_front (&open_inodes, &inode->elem);
   lock_release(&open_inode_lock);
 
@@ -205,34 +208,36 @@ inode_close (struct inode *inode)
     return;
 
   /* Release resources if this was the last opener. */
-  lock_acquire(&open_inode_lock);
+  
   inode_lock(inode);
   if (--inode->open_cnt == 0)
   {
     /* Remove from inode list and release lock. */
+    lock_acquire(&open_inode_lock);
     list_remove (&inode->elem);
-
+    lock_release(&open_inode_lock);
     /* Deallocate blocks if removed. */
     if (inode->removed) 
     {
       /*free_map_release (inode->data.start,
                         bytes_to_sectors (inode->data.length)); 
       */
+      inode_unlock(inode);
       struct inode_disk *ip = malloc(sizeof(struct inode_disk));
       read_bcache(inode->sector,ip,0,BLOCK_SECTOR_SIZE);
       free_inode_data(ip);
       free(ip);
       free_map_release (inode->sector, 1);
     }
-   
-    inode_unlock(inode);
-    lock_release(&open_inode_lock);
+    else
+      inode_unlock(inode);
+    
     free (inode); 
     return;
   }
 
   inode_unlock(inode);
-  lock_release(&open_inode_lock);
+ 
 
 }
 
@@ -294,6 +299,9 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   /*if (eof_flag)
     lock_release (&inode -> lk);
    */ 
+  if(inode_length(inode) > offset + BLOCK_SECTOR_SIZE){
+    request_readahead(byte_to_sector(inode, offset + BLOCK_SECTOR_SIZE));
+  }
   return bytes_read;
 }
 
@@ -361,6 +369,11 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     lock_release (&inode -> lk);
 
   free (bounce);
+  
+  if(inode_length(inode) > offset + BLOCK_SECTOR_SIZE){
+    request_readahead(byte_to_sector(inode, offset + BLOCK_SECTOR_SIZE));
+  }
+  
   return bytes_written;
 }
 
