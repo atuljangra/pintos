@@ -139,6 +139,7 @@ inode_open (block_sector_t sector)
   struct list_elem *e;
   struct inode *inode;
 
+// search:
   lock_acquire(&open_inode_lock);
   /* Check whether this inode is already open. */
   for (e = list_begin (&open_inodes); e != list_end (&open_inodes);
@@ -147,14 +148,14 @@ inode_open (block_sector_t sector)
     inode = list_entry (e, struct inode, elem);
     if (inode->sector == sector) 
       {
+        //~ printf ("open: already open \n");
+        //inode_reopen (inode);
+        inode->open_cnt++;
         lock_release(&open_inode_lock);
-        inode_reopen (inode);
         return inode; 
       }
   }
-  lock_release(&open_inode_lock);
   
-
   /* Allocate memory. */
   inode = malloc (sizeof *inode);
   if (inode == NULL){
@@ -162,6 +163,7 @@ inode_open (block_sector_t sector)
     return NULL;
   }
 
+  //~ printf ("open: initializing %d \n", sector);
   /* Initialize. */
   inode->sector = sector;
   inode->open_cnt = 1;
@@ -169,7 +171,7 @@ inode_open (block_sector_t sector)
   inode->removed = false;
   lock_init (&inode -> lk);
   
-  lock_acquire(&open_inode_lock);
+  // lock_acquire(&open_inode_lock);
   list_push_front (&open_inodes, &inode->elem);
   lock_release(&open_inode_lock);
 
@@ -182,11 +184,11 @@ struct inode *
 inode_reopen (struct inode *inode)
 {
  
-  lock_acquire(&inode->lk);
+  lock_acquire(&open_inode_lock);
   if (inode != NULL){
     inode->open_cnt++;
   }
-  lock_release(&inode->lk);
+  lock_release(&open_inode_lock);
   return inode;
 }
 
@@ -207,22 +209,25 @@ inode_close (struct inode *inode)
   if (inode == NULL)
     return;
 
-  /* Release resources if this was the last opener. */
+ 
+  /* Release resources if this was the last opener. */  
+  lock_acquire(&open_inode_lock);
   
-  inode_lock(inode);
   if (--inode->open_cnt == 0)
   {
+    
     /* Remove from inode list and release lock. */
-    lock_acquire(&open_inode_lock);
+//    lock_acquire(&open_inode_lock);
     list_remove (&inode->elem);
-    lock_release(&open_inode_lock);
+//    lock_release(&open_inode_lock);
     /* Deallocate blocks if removed. */
     if (inode->removed) 
     {
       /*free_map_release (inode->data.start,
                         bytes_to_sectors (inode->data.length)); 
       */
-      inode_unlock(inode);
+      //inode_unlock(inode);
+      lock_release(&open_inode_lock);
       struct inode_disk *ip = malloc(sizeof(struct inode_disk));
       read_bcache(inode->sector,ip,0,BLOCK_SECTOR_SIZE);
       free_inode_data(ip);
@@ -230,14 +235,16 @@ inode_close (struct inode *inode)
       free_map_release (inode->sector, 1);
     }
     else
-      inode_unlock(inode);
-    
+    {
+      //inode_unlock(inode);
+      lock_release(&open_inode_lock);
+    }
     free (inode); 
     return;
   }
 
-  inode_unlock(inode);
- 
+  lock_release(&open_inode_lock);
+  
 
 }
 
@@ -247,9 +254,9 @@ void
 inode_remove (struct inode *inode) 
 {
   ASSERT (inode != NULL);
-  inode_lock(inode);
+  lock_acquire(&open_inode_lock);
   inode->removed = true;
-  inode_unlock(inode);
+  lock_release(&open_inode_lock);
 }
 
 /* Reads SIZE bytes from INODE into BUFFER, starting at position OFFSET.
@@ -321,6 +328,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   bool eof_flag = false;
   off_t initial_offset = offset;
   off_t new_length = (inode_length(inode) > size + offset)?inode_length(inode):size+offset;
+  //~ printf ("write : newlength %d len%d \t",new_length, size);
   if (inode->deny_write_cnt)
     return 0;
   
@@ -343,7 +351,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       int chunk_size = size < min_left ? size : min_left;
       if (chunk_size <= 0)
         break;
-  
+      //~ printf ("write : writing to bcache %d ofs %d size %d\n", sector_idx, sector_ofs, chunk_size);
       write_bcache (sector_idx, (void *) (buffer + bytes_written), sector_ofs, chunk_size);
 
       /* Advance. */

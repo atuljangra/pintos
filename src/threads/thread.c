@@ -346,10 +346,12 @@ thread_tid (void)
 struct thread *
 get_thread (tid_t tid)
 {
+  ASSERT(intr_get_level() == INTR_OFF);
+ //TODO: remove the interrut disable 
   tid_t pid = tid;
   struct list_elem *e;
   struct thread *t = NULL;
-  int old_level = intr_disable();
+  //int old_level = intr_disable();
   for (e = list_begin(&all_list); e != list_tail(&all_list); e = list_next(e))
   {
     t = list_entry(e, struct thread, allelem);
@@ -358,17 +360,18 @@ get_thread (tid_t tid)
     else
       t = NULL;
   }
-  intr_set_level(old_level);
+  //intr_set_level(old_level);
   return t;
 }
 
 struct exit_thread *
 get_exit_thread (tid_t tid)
 {
+  ASSERT(intr_get_level() == INTR_OFF);
   tid_t pid = tid;
   struct list_elem *e;
   struct exit_thread *t = NULL;
-  int old_level = intr_disable();
+  //int old_level = intr_disable();
   for (e = list_begin(&dead_list); e != list_tail(&dead_list); e = list_next(e))
   {
     t = list_entry(e, struct exit_thread, elem);
@@ -377,7 +380,7 @@ get_exit_thread (tid_t tid)
     else
       t = NULL;
   }
-  intr_set_level(old_level);
+  //intr_set_level(old_level);
   return t;
 }
 
@@ -394,18 +397,24 @@ thread_exit (int exit_code)
   
 //  lock_acquire(&file_lock);
   dir_close(thread_current()->cwd);
-  file_close(thread_current()->current_executable);
-  fd_mem_free();
+ 
+  if (thread_current () -> current_executable)
+  {
+  	file_close(thread_current()->current_executable);
+    fd_mem_free();
+    bitmap_destroy(thread_current() -> fd_entry);
+  }
 //  lock_release(&file_lock);
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it call schedule_tail(). */
   intr_disable ();
 
-  printf("%s: exit(%d)\n", thread_current ()->name, exit_code);
- // file_allow_write (thread_current () -> current_executable);
-  bitmap_destroy(thread_current() -> fd_entry);
   
+
+  
+  if (thread_current() -> load_status)
+    printf("%s: exit(%d)\n", thread_current ()->name, exit_code);
  
   /* do not create exit structure if current thread is orphan */
   if(get_thread(thread_current() -> parent) != NULL)
@@ -414,7 +423,8 @@ thread_exit (int exit_code)
     exit->tid = thread_current ()->tid;
     exit->parent = thread_current ()->parent;
     exit->exit_code = exit_code;
-    list_push_front (&dead_list, &exit->elem); 
+    exit -> load_status = thread_current() -> load_status;
+    list_push_front (&dead_list, &exit->elem);
   }
   /* prevent current thread's children from becoming zombie */
   struct list_elem *e;
@@ -423,9 +433,13 @@ thread_exit (int exit_code)
     {
       struct exit_thread *t = list_entry (e, struct exit_thread, elem);
       if (t->parent == thread_current() -> tid)
-        thread_finish(t);
+      {
+        struct list_elem *next = list_remove (e);
+        thread_finish (t);
+        e = list_prev (next);
+      }
     }
-  
+  /* Wake up all the threads who have called wait on this thread. */
   thread_wakeup();
   list_remove (&thread_current()->allelem);
   thread_current ()->status = THREAD_DYING;
@@ -433,31 +447,31 @@ thread_exit (int exit_code)
   NOT_REACHED ();
 }
 
+void
+thread_finish (struct exit_thread *t)
+{
+  ASSERT(intr_get_level() == INTR_OFF);
+  list_remove (&t->elem);
+  free (t);
+}
+
 /* Gives up the thread T resources. Make sure that
    t is not in the ready list but in the all threads
    list. Also it cannot be called on the currently 
    executing thread. */
-void thread_cleanup (struct thread *t)
+/*void thread_cleanup (struct thread *t)
 {
   ASSERT(thread_current() != t);
   int old_level = intr_disable();
   list_remove(&t->allelem);
-/*  list_remove(&t->elem);*/
+   list_remove(&t->elem);
   intr_set_level(old_level);
+  printf("-------------------\n");
+  sup_page_table_destroy(t->sup_pt);
+  printf("***********************\n");
   pagedir_destroy(t->pagedir);
   palloc_free_page(t);
-}
-
-/* Called when wait has been successfully called on exit_thread T.
-   Frees the memory allocated for T and removes it from our list. */
-void
-thread_finish (struct exit_thread *t)
-{
-  int old_level = intr_disable();
-  list_remove(&t->elem);
-  free((void *)t);
-  intr_set_level(old_level);
-}
+}*/
 
 /* Wakes up all the threads sleeping on the current thread.
  * Should be called with interrupts off, preferrably from 
@@ -645,6 +659,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   t->wait_on = -1;
+  t -> load_status = false;
+  t -> wait_on_exec = false;
   list_push_back (&all_list, &t->allelem);
 }
 
@@ -749,7 +765,7 @@ allocate_tid (void)
 {
   static tid_t next_tid = 1;
   tid_t tid;
-
+  
   lock_acquire (&tid_lock);
   tid = next_tid++;
   lock_release (&tid_lock);
@@ -777,7 +793,6 @@ unsigned add_file( struct file *f)
    struct fd_table_element *fd_elem = (struct fd_table_element *)malloc(sizeof (struct fd_table_element));
    fd_elem -> file_name = f;
    fd_elem -> fd = fd_next_available();
-//   printf ("am I here????????? %d \t", fd_elem -> fd);
    bitmap_mark (thread_current() -> fd_entry, fd_elem -> fd);
    list_push_back (thread_current() -> fd_table, &fd_elem -> file_elem);
    return fd_elem -> fd;
@@ -825,6 +840,7 @@ void entry_remove (unsigned fd)
   bitmap_reset (thread_current() -> fd_entry, fd);
 }
 
+/* Call this function with interupts disable */
 void fd_mem_free (void)
 {
   struct list_elem *iterator;

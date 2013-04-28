@@ -16,7 +16,7 @@ struct lock bcache_lock;
 
 void writeback (int);
 void evict_bcache (void);
-void request_readahead (block_sector_t );
+
 
 static int miss = 0;
 static int hit= 0;
@@ -173,7 +173,7 @@ void write_bcache (block_sector_t blockid, void *buffer, int offset, int size)
 {
   //sanity checks
   ASSERT (offset < BLOCK_SECTOR_SIZE);
-  //~ printf ("Writing bcache at %d, offset %d, size %d buffer %s \n", blockid, offset, size, buffer);
+  // printf ("Writing bcache at %d, offset %d, size %d buffer %s \n", blockid, offset, size, buffer);
 
   lock_acquire(&bcache_lock);
   // flag is 1 as it is a write access
@@ -183,6 +183,7 @@ void write_bcache (block_sector_t blockid, void *buffer, int offset, int size)
   // If no entry is there, then add the cache and increase the reader.
   if (entry == -1)
   {
+    //~ printf ("adding while writing \t");
     entry = add_bcache (blockid, FLAG_WRITE);
     // Register as writer process
     // bcache[entry] -> write++;i

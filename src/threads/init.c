@@ -24,6 +24,8 @@
 #include "threads/palloc.h"
 #include "threads/pte.h"
 #include "threads/thread.h"
+#include "vm/vm.h"
+#include "vm/sframe.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "userprog/exception.h"
@@ -38,6 +40,7 @@
 #include "devices/ide.h"
 #include "filesys/filesys.h"
 #include "filesys/fsutil.h"
+#include "vm/swap.h"
 #endif
 
 /* Page directory with kernel mappings only. */
@@ -107,7 +110,9 @@ main (void)
   palloc_init ();
   malloc_init ();
   paging_init ();
-
+  frame_init ();
+  sframe_init();
+  init_mmap ();
   /* Segmentation. */
 #ifdef USERPROG
   tss_init ();
@@ -136,19 +141,20 @@ main (void)
   usb_storage_init ();
   ide_init ();
   locate_block_devices ();
-  filesys_init (format_filesys); 
+  filesys_init (format_filesys);
   thread_filesys_init ();
+  swap_init();
 #endif
 
   printf ("Boot complete.\n");
   
   /* Run actions specified on kernel command line. */
   run_actions (argv);
-	
+  
   /* Finish up. */
   if (reboot_when_done)
     reboot ();
- 
+  
   if (power_off_when_done)
     power_off ();
   thread_exit (-1);

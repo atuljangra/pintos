@@ -11,7 +11,7 @@
 #include "threads/loader.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-
+#include "vm/vm.h"
 /* Page allocator.  Hands out memory in page-size (or
    page-multiple) chunks.  See malloc.h for an allocator that
    hands out smaller chunks.
@@ -113,6 +113,14 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 void *
 palloc_get_page (enum palloc_flags flags) 
 {
+  //~ if (flags & PAL_USER)
+  //~ {
+    //~ printf ("user ");
+    //~ struct frame_table_entry *frame;
+    //~ frame = vm_alloc_frame ();
+    //~ void * kpage = frame -> pageaddr;
+    //~ return kpage;
+  //~ }
   return palloc_get_multiple (flags, 1);
 }
 

@@ -1,3 +1,4 @@
+
 //14406
 #include <stdio.h>
 #include <round.h>
@@ -8,10 +9,9 @@
 #include "threads/init.h"
 #include "threads/palloc.h"
 #include "threads/malloc.h"
-
+#include "threads/synch.h"
 #include "lib/syscall-nr.h"
 #include "userprog/syscall.h"
-#include "lib/user/syscall.h"
 #include "userprog/syscall.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -21,11 +21,11 @@
 #include "userprog/process.h"
 #include "lib/string.h"
 #include "devices/input.h"
+#include "vm/vm.h"
 
 
 
 static void syscall_handler (struct intr_frame *);
-
 static int getb_user (const uint32_t *uaddr, bool *is_valid);
 static int getl_user (const uint32_t *uaddr, bool *is_valid) UNUSED;
 static bool putb_user (uint32_t *udst, uint8_t byte_val) UNUSED;
@@ -108,8 +108,6 @@ bool validate_buffer (const char *buffer, char *terminator, int max_len, bool wr
   }
 }
 
-
-
 void
 syscall_init (void) 
 {
@@ -117,10 +115,11 @@ syscall_init (void)
  // lock_init (&file_lock);
 }
 
-/*return: -1 if buffer not valid,
-  0 if file not valid
-  otherwise RESULT (actual size that is written
-  If the fd corresponds to directory then it must fail */
+/*
+ * return: -1 if buffer not valid,
+ * 0 if file not valid
+ * otherwise RESULT (actual size that is written
+ */
 int write (int fd, const void *buffer, unsigned length)
 {
   int result;
@@ -255,6 +254,7 @@ int read (int fd, void* buffer, unsigned length)
   }
   bool valid;
   valid = validate_buffer (buffer, NULL, length, true);
+//  printf ("validated buffer \n");
   if (!valid)
   {
    // lock_release (&file_lock);
@@ -380,6 +380,32 @@ unsigned tell (int fd)
   //  lock_release(&file_lock);
   return result;
 
+}
+
+mapid_t mmap (int fd, void *addr)
+{
+  //printf ("mmap was called\n");
+  if (!addr)
+    return -1;
+  if ((fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
+      || (fd == STDIN_FILENO && thread_current() -> fd_std_in) 
+      || (fd == 2 && thread_current() -> fd_std_err))
+    return -1;
+  struct fd_table_element *fd_elem = find_file (fd);
+  if (fd_elem == NULL)
+    return -1;
+  if ((uint32_t)addr % PGSIZE != 0) /* not aligned properly*/
+    return -1;
+  struct file* file = file_reopen (fd_elem -> file_name);
+  ASSERT(file != NULL)
+  mapid_t result = vm_mmap (file, addr); 
+  return result;
+}
+
+void munmap (mapid_t mapping)
+{
+  vm_unmap (mapping);
+  return;
 }
 
 bool 
@@ -533,6 +559,7 @@ int inumber(int fd)
   //  lock_release(&file_lock);
   return result;
 }
+
 static void
 syscall_handler (struct intr_frame *f) 
 {
@@ -540,6 +567,7 @@ syscall_handler (struct intr_frame *f)
    ASSERT(dir_isDir(thread_current()->cwd));
   
   uint32_t *sp = (uint32_t *) f->esp;
+  thread_current() -> esp = f -> esp;
   bool sys_num_valid;
   int sys_num = getl_user(&sp[0], &sys_num_valid);
   if (!sys_num_valid)
@@ -549,7 +577,7 @@ syscall_handler (struct intr_frame *f)
   int arg1 = getl_user (&sp[2], &arg1_valid);
   int arg2 = getl_user (&sp[3], &arg2_valid);
   int result = 0;
-   // printf("inside syscall_handler %d \n",sys_num);
+//  printf ("arg: %s", arg1);
   switch (sys_num)
   {
     case SYS_HALT:
@@ -615,6 +643,16 @@ syscall_handler (struct intr_frame *f)
         on_pgfault();
       close ((int) arg0);
       break;
+    case SYS_MMAP:
+      if (!arg0_valid || !arg1_valid)
+        on_pgfault();
+      result = mmap ((int) arg0, (void *) arg1);
+      break;
+    case SYS_MUNMAP:
+      if (!arg0_valid)
+        on_pgfault();
+      munmap ((mapid_t) arg0);
+      break;
     case SYS_CHDIR:
       if (!arg0_valid)
         on_pgfault();
@@ -641,13 +679,10 @@ syscall_handler (struct intr_frame *f)
       result = (int) inumber((int) arg0);
       break;
     default:
-      //printf ("undefined system call(%d)!\n", sys_num);
+      printf ("undefined system call(%d)!\n", sys_num);
       thread_exit (-1);
   }
   f->eax = result;
-  
-   ASSERT(dir_isDir(thread_current()->cwd));
-   //printf("exiting syscall\n");
 }
  	
 void on_pgfault ()
@@ -697,14 +732,14 @@ getb_user (const uint32_t *uaddr, bool *is_valid)
   int result;
   *is_valid = false;
   /* Check if the user program tries to access
-		 kernel's virtual memory */
+    kernel's virtual memory */
   if (is_user_vaddr(uaddr) == false) {
-  	result = -1;
+    result = -1;
   }
   else {
-	  asm ("movl $1f, %0; movl $0f, %%ebx;"
-	        "0:; movzbl %2, %0; movb $0x1, %1; 1:"
-		   : "=&a" (result), "=m" (*is_valid): "m" (*uaddr) : "ebx", "memory");
+    asm ("movl $1f, %0; movl $0f, %%ebx;"
+          "0:; movzbl %2, %0; movb $0x1, %1; 1:"
+        : "=&a" (result), "=m" (*is_valid): "m" (*uaddr) : "ebx");
   }
   return result;
 }
@@ -719,14 +754,14 @@ getl_user (const uint32_t *uaddr, bool *is_valid)
   int result;
   *is_valid = false;
   /* Check if the user program tries to access
-		 kernel's virtual memory */
+    kernel's virtual memory */
   if (is_user_vaddr(uaddr) == false) {
-  	result = -1;
+    result = -1;
   }
   else {
-	  asm ("movl $1f, %0; movl $0f, %%ebx;"
-	        "0:; movl %2, %0; movb $0x1, %1; 1:"
-		   : "=&a" (result), "=m" (*is_valid): "m" (*uaddr) : "ebx", "memory");
+    asm ("movl $1f, %0; movl $0f, %%ebx;"
+          "0:; movl %2, %0; movb $0x1, %1; 1:"
+        : "=&a" (result), "=m" (*is_valid): "m" (*uaddr) : "ebx");
   }
   return result;
 }

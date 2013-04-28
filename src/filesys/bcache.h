@@ -45,6 +45,7 @@ int find_sector (block_sector_t blockid, int flag);
 void read_bcache (block_sector_t blockid, void *buffer, off_t offset, int size);
 void write_bcache (block_sector_t blockid, void *buffer, int offset, int size);
 void flush_buffer_cache (void);
+void request_readahead (block_sector_t );
 
 void fulfill_readahead (block_sector_t blockid);
 #endif

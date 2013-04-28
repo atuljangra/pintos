@@ -5,12 +5,18 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-
+#include "threads/vaddr.h"
+#include "vm/vm.h"
+#include "threads/palloc.h"
+#include "vm/frame.h"
+#include "threads/pte.h"
+#include "lib/string.h"
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
+// static bool handle_page_mapping_present(struct sup_page_table_entry *);
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -132,10 +138,10 @@ kill (struct intr_frame *f)
 static void
 page_fault (struct intr_frame *f) 
 {
-  bool not_present UNUSED;  /* True: not-present page, false: writing r/o page. */
+  bool not_present;  /* True: not-present page, false: writing r/o page. */
   bool write UNUSED;        /* True: access was write, false: access was read. */
   bool user UNUSED;         /* True: access by user, false: access by kernel. */
-  void *fault_addr UNUSED;  /* Fault address. */
+  void *fault_addr;  /* Fault address. */
 
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
@@ -158,14 +164,141 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
-/*  printf ("Page fault at %p: %s error %s page in %s context.\n",*/
-/*          fault_addr,*/
-/*          not_present ? "not present" : "rights violation",*/
-/*          write ? "writing" : "reading",*/
-/*          user ? "user" : "kernel");*/
+
+  #ifdef DEBUG
+  printf ("Debug user: %d\n", user);
+  #endif
+
+  /*
+   * If the fault address is null, or the fault_address is present, or
+   * the fault address is not user valid ( i.e. it s above PHYS_BASE)
+   * then we can simple assert that we want the thread to die.
+   * This behavior is currently not handled.
+   */
+  if (fault_addr == NULL || !not_present || !is_user_vaddr (fault_addr))
+  {
+    thread_exit (-1);
+  }
+
+  struct thread *t;
+  struct sup_page_table_entry *sup_pt_entry;
+
+  t = thread_current ();
+  
+  /* We are proceeding only if the fault_address is not present */
+  ASSERT (not_present);
+
+  sup_pt_entry = find_page_by_vaddr (pg_round_down (fault_addr));
+
+  switch (f -> cs)
+  {
+    /*
+     * User's code segment, thus this is an user exception, which is the
+     * normal case
+     */
+    case (SEL_UCSEG):
+      if (not_present)
+      {
+       /*
+        * Check if it's the case of stack growth.
+        * Checks if the stack growth is valid, if yes installs a page for
+        * the stack and return else move forward. Limited stack to a size of
+        * 8MB.
+        */
+        if (((uint32_t)f-> esp - 32 <= (uint32_t)fault_addr)  &&
+        (uint32_t) f -> esp >= (uint32_t)(PHYS_BASE - STACK_MAX_PAGES*PGSIZE))
+        {
+          if (sup_pt_entry)
+          {
+            bool success = sup_page_table_load (sup_pt_entry);
+            if (!success)
+              thread_exit(-1);
+            else
+              return;
+          }
+          vm_create_page_and_alloc (pg_round_down(fault_addr));
+          return;
+        }
+        
+        /*
+         * the page may be existing but may not be yet loaded
+         * so load it now.
+         */
+        else if (sup_pt_entry != NULL)
+        {
+            bool success = sup_page_table_load (sup_pt_entry); 
+            if (!success)
+              thread_exit(-1);
+            else
+              return;
+        }
+        else
+        {
+          thread_exit (-1);
+        }
+      }
+    break; 
+
+
+    /* Kernel's code segment, we didn't expect to find bugs in the kernel.
+     * Thus this must be an user space memory acess fault.
+     * If this is due to page not present then we handle it in the same
+     * way as we did in user's case.
+     */ 
+    case (SEL_KCSEG):
+
+    /*
+     * Checking if this was the bug from user or something wicked happened
+     * with the kernel code itself.
+     * If t -> esp is user valid, then we can be sure that this is user.
+     * We are setting t -> esp in syscall handler.
+     * This part is tricky. We've designed our code in such a way that the
+     * entry point of user-kernel interaction is from syscall handler only.
+     * Thus we can store the esp in syscall handler, and then check it here.
+     */
+    if (is_user_vaddr(t -> esp) && is_user_vaddr(fault_addr))
+    {
+      sup_pt_entry = find_page_by_vaddr (pg_round_down(fault_addr));
+      /*
+       * Handling Stack growth with the esp of user and not the esp from the
+       * trap frame.
+       */
+      if (((uint32_t)t-> esp - 32 <= (uint32_t)fault_addr)  &&
+        (uint32_t)t -> esp  >= (uint32_t)(PHYS_BASE - STACK_MAX_PAGES*PGSIZE))
+      {
+        if (sup_pt_entry)
+        {
+          bool success = sup_page_table_load (sup_pt_entry);
+          if (!success)
+            thread_exit(-1);
+          else
+            return;
+        }
+        vm_create_page_and_alloc (pg_round_down(fault_addr));
+        return;
+      }
+      /*
+       * Handling other cases similar to user's case above
+       */
+      if (sup_pt_entry != NULL)
+      {
+        bool success = sup_page_table_load (sup_pt_entry);
+        if (!success)
+          thread_exit(-1);
+        else
+          return;
+     }
+      else
+      {
+        thread_exit (-1);
+      }
+      NOT_REACHED();
+    }
+    
+    break;
+    default:
+      PANIC ("Unknown bug \n");
+  }
+
   kill (f);
 }
-

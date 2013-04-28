@@ -126,6 +126,7 @@ list_prev (struct list_elem *elem)
            e = list_prev (e))
         {
           struct foo *f = list_entry (e, struct foo, elem);
+  printf ("%s yoyoyo \n", buf);
           ...do something with f...
         }
 */

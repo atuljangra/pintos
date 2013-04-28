@@ -5,6 +5,9 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
+#include "lib/kernel/hash.h"
+#include "filesys/file.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -15,16 +18,21 @@ enum thread_status
     THREAD_DYING        /* About to be destroyed. */
   };
 
-/* Thread identifier type.
-   You can redefine this to whatever type you like. */
+/* Thread identifier. */
 typedef int tid_t;
-#define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
+#define TID_ERROR ((tid_t) -1)
+
+/* Map region identifier. */
+typedef int mapid_t;
+#define MAP_FAILED ((mapid_t) -1)
 
 /* Thread priorities. */
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
-
+#define STACK_MAX_PAGES 2048            /* Maximum number of stack pages */
+/* Debugging mode*/
+// #define DEBUG
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -94,21 +102,27 @@ struct thread
     
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+    bool wait_on_exec;                  /* Is the thread waiting for execed child to load. */
+    bool load_status;                  /* Whether the executable was successfully loaded. */
     tid_t wait_on;                      /* Thread to sleep on */
-
-
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory.*/
     struct list * fd_table;             /* fd table list pointer*/
     struct bitmap *fd_entry;            /* keep record of used fd*/
     struct file * current_executable;   /* currently executing file*/
+    struct hash * sup_pt;               /* Supplemental page table */
+    struct lock pt_lock;                /* lock for sup_page table */
+    struct list * mapping;              /* List of mmaped files */
 
     bool fd_std_in;                     /* boolean to keep */
     bool fd_std_out;                    /* track of console*/
     bool fd_std_err;                    /* IO */
+    void *user_stack_bottom;            /* user stack */
+    void *esp;                           /* esp of this thread */
 #endif
     int exit_code;                      /* Exit code. */
+    uint32_t pages[383];
     /* Owned by thread.c. */
     
     struct dir *cwd;                    /* current working directory */
@@ -119,6 +133,7 @@ struct exit_thread
 {
   tid_t tid;
   tid_t parent;
+  bool load_status;        /* Whether the executable was successfully laoded. */
   struct list_elem elem;    /* List element for dead processes list */
   int exit_code;            /* Exit code set by on thread exit */
 };
@@ -128,6 +143,27 @@ struct fd_table_element
   struct file *file_name;
   unsigned fd;
   struct list_elem file_elem;            /* hanger of list */
+};
+
+struct sup_page_table_entry
+{
+  void *vaddr;                          /* virtual address */
+  struct frame *frame;                  /* frame correspoding to this entry */
+  struct hash_elem hash_elem;           /* hash element hanger for pte */
+  bool file_mapped;                     /* is this a mmap file mapping? */
+  struct file * file;                   /* file if it's an executable mapping */
+  off_t offset;
+  uint32_t page_read_bytes;             /* page_read_byes of the mmaped file */
+  bool writable;
+  bool shared;                          /* Whether to have a private copy or a shared copy. */
+};
+
+struct mapped_entry
+{
+  mapid_t id;                             /* mapid */
+  struct file* file;                      /* the mmaped file pointer */
+  struct list_elem list_elem;             /* hanger for list */
+  void *vaddr;                            /* virtual address where mapped */
 };
 
 /* Functions to modify fd_table */
@@ -163,7 +199,7 @@ const char *thread_name (void);
 
 void thread_exit (int) NO_RETURN;
 void thread_finish (struct exit_thread *);
-void thread_cleanup (struct thread *t);
+//void thread_cleanup (struct thread *t);
 void thread_yield (void);
 
 /* Performs some operation on thread t, given auxiliary data AUX. */

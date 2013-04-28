@@ -193,6 +193,7 @@ lock_init (struct lock *lock)
 void
 lock_acquire (struct lock *lock)
 {
+  
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));

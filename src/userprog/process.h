@@ -9,5 +9,4 @@ tid_t process_exec (const char* file_name);
 int process_wait (tid_t child_tid);
 void process_exit (void);
 void process_activate (void);
-
 #endif /* userprog/process.h */
