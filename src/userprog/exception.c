@@ -264,9 +264,10 @@ page_fault (struct intr_frame *f)
        * Handling Stack growth with the esp of user and not the esp from the
        * trap frame.
        */
-      if (((uint32_t)t-> esp - 32 <= (uint32_t)fault_addr)  &&
-        (uint32_t)t -> esp  >= (uint32_t)(PHYS_BASE - STACK_MAX_PAGES*PGSIZE))
+      if (((uint32_t)t-> esp - 32 <= (uint32_t)fault_addr) && //write)
+        (uint32_t)fault_addr  > (uint32_t)(PHYS_BASE - STACK_MAX_PAGES*PGSIZE))
       {
+        // printf ("loda \n");
         if (sup_pt_entry)
         {
           bool success = sup_page_table_load (sup_pt_entry);

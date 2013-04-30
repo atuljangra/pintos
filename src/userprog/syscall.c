@@ -123,63 +123,92 @@ syscall_init (void)
 int write (int fd, const void *buffer, unsigned length)
 {
   int result;
+  int ret = 0;
  // lock_acquire(&file_lock);
+  //~ printf ("yaha hu main \n");
   if (fd < 0 || (fd == STDIN_FILENO && thread_current() -> fd_std_in) 
       || (fd == 2 && thread_current() -> fd_std_err))
   {
-    result = -1;
-    goto done;
+    return -1;
   }
   bool valid = validate_buffer (buffer, NULL, length, false);
   if (!valid)
   {
   //  lock_release(&file_lock);
-    thread_exit (-1);
+    //~ printf ("kaha hu main \n");
+    on_pgfault ();
+    NOT_REACHED ();
   }
-  /* write to output */
-  if (fd == STDOUT_FILENO && thread_current() -> fd_std_out)
+
+  int num_of_pages = length / PGSIZE;
+  int to_write = length;
+  int cur_write = 0;
+  int i = 0;
+  //~ printf ("no: %d, to_write %d", num_of_pages, to_write);
+  void *kpage = palloc_get_page (PAL_ASSERT);
+  for (i = 0; i <= num_of_pages; i++)
   {
-    int limit = 256;
-    int i = length / limit;
-    while (i > 0)
+    if (to_write / PGSIZE == 0)
+      to_write = to_write % PGSIZE;
+
+    if (to_write == 0)
     {
-      putbuf (buffer, limit);
-      buffer += limit;
-      i--;
+      //~ printf ("exiting %d \n", i);
+      break;
     }
-    putbuf (buffer, length % limit);
-    result = length;
-//    printf (" WRITTEN console: %d", result);
-  }
-  else
-  {
-    if (fd < 0){
-      // palloc_free_page (valid_buffer);
-    //  lock_release (&file_lock);
+
+    cur_write = (to_write > PGSIZE) ? PGSIZE : to_write;
+
+    memcpy (kpage, buffer + (length - to_write), cur_write);
+    if (fd == STDOUT_FILENO && thread_current() -> fd_std_out)
     {
-      result = 0;
-      goto done;
+      int limit = 256;
+      int i = cur_write / limit;
+      while (i > 0)
+      {
+        putbuf (kpage, limit);
+        kpage += limit;
+        i--;
+      }
+      putbuf (kpage, cur_write % limit);
+      result = cur_write;
+    //~ printf (" WRITTEN console: %d", result);
     }
-    }
-    struct fd_table_element * fd_elem = find_file (fd);
-    if (fd_elem == NULL)
+    else
     {
-      result = 0;
-      goto done;
-    }
-    struct file *write = fd_elem -> file_name;
-    if(inode_isDir(file_get_inode(write))){
-      result = -1;
-      goto done;
-    }
-    result = file_write (write, buffer, length);
+      if (fd < 0)
+      {
+        palloc_free_page (kpage);
+        return 0;
+      }
+      
+      struct fd_table_element * fd_elem = find_file (fd);
+      if (fd_elem == NULL)
+      {
+        palloc_free_page (kpage);
+        return 0;
+      }
+      struct file *write = fd_elem -> file_name;
+      if(write == NULL)
+      {
+        ret = -1;
+        palloc_free_page (kpage);
+        return ret;
+      }
+      if(inode_isDir(file_get_inode(write)))
+      {
+        ret = -1;
+        palloc_free_page (kpage);
+        return ret;
+      }      
+      result = file_write (write, kpage, cur_write);
 //    printf (" WRITTEN : %d", result);
   }
-  done:
-   // lock_release(&file_lock);
-//    printf (" Wrote: %d \t", result);
-
-  return result;
+  to_write = to_write - cur_write;
+  ret += result;
+  }
+  palloc_free_page (kpage);
+  return ret;
 }
 
 /*
@@ -250,8 +279,7 @@ int read (int fd, void* buffer, unsigned length)
   if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
       || (fd == 2 && thread_current() -> fd_std_err))
   {
-    result = -1;
-    goto done;
+    return -1;
   }
   //~ if (length = PGSIZE)
   //~ printf ("Read : fd %d length %d \n", fd, length);
@@ -285,7 +313,7 @@ int read (int fd, void* buffer, unsigned length)
     // printf ("Reading : fd %d length %d cur %d  toread %d validating %d \n", fd, length, cur_read, to_read, (length - to_read));
     if (fd == STDIN_FILENO && thread_current() -> fd_std_in)
     {
-      unsigned i = 0;
+      int i = 0;
       while (i < cur_read)
         *(uint8_t *)(kpage + i) = input_getc();
        result = cur_read;
@@ -297,21 +325,18 @@ int read (int fd, void* buffer, unsigned length)
       if (fd_elem == NULL)
       {
         palloc_free_page (kpage);
-        result = -1;
-        goto done;
+        return -1;
       }
       struct file * read = fd_elem -> file_name;
       if(read == NULL)
       {
-        result = -1;
         palloc_free_page (kpage);
-        goto done;
+        return -1;
       }
       if(inode_isDir(file_get_inode(read)))
       {
-        result = -1;
         palloc_free_page (kpage);
-        goto done;
+        return -1;
       }
       result = file_read (read, kpage, cur_read);
       //~ printf ("Read %d from fd %d length%d\n", result, fd, length);
@@ -321,8 +346,6 @@ int read (int fd, void* buffer, unsigned length)
     ret += result;
   }
   palloc_free_page (kpage);
-  done:
-  // lock_release(&file_lock);
   return ret;
 }
 

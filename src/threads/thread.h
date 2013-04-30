@@ -30,7 +30,7 @@ typedef int mapid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
-#define STACK_MAX_PAGES 2048            /* Maximum number of stack pages */
+#define STACK_MAX_PAGES 20480            /* Maximum number of stack pages */
 /* Debugging mode*/
 // #define DEBUG
 /* A kernel thread or user process.
