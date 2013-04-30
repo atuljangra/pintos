@@ -8,6 +8,7 @@
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "filesys/free-map.h"
+#include "filesys/bcache.h"
 static char* skipelem(char *path, char **name);
 static bool dir_isEmpty(struct dir *dir);
 
@@ -227,14 +228,12 @@ dir_remove (struct dir *dir, const char *name)
   /* Find directory entry. */
   if (!lookup (dir, name, &e, &ofs))
     goto done;
-
-  /* Don't allow removal of cwd */
-  if(inode_get_inumber(dir->inode) == e.inode_sector)
-    goto done;
   
   /* Open inode. This must not be called to open the directory 
      as it will try to reaquire lock on directory */
   inode = inode_open (e.inode_sector);
+  
+    
   if (inode == NULL)
     goto done;
 
@@ -332,9 +331,18 @@ dir_mkdir(const char *name)
   //struct dir *dir = dir_open_root ();
   success = ( dir != NULL
               && free_map_allocate (1, &inode_sector)
-              && dir_create (inode_sector, 16)
-              && dir_add (dir, x, inode_sector)
+              && dir_create (inode_sector, 16));
+  if(success){
+    /* dir_init must succeed */
+    success =  (dir_add (dir, x, inode_sector)
               && dir_init(inode_sector,inode_get_inumber(inode)));
+    if(!success){
+      struct inode_disk *inode = malloc(sizeof(struct inode_disk));
+      read_bcache(inode_sector, inode, 0, BLOCK_SECTOR_SIZE);
+      free_inode_data(inode);
+      free(inode);
+    }
+  }
 
   
   if (!success && inode_sector != 0) 

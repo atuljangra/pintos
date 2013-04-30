@@ -75,8 +75,16 @@ filesys_create (const char *name, off_t initial_size)
   //struct dir *dir = dir_open_root ();
   success = ( dir != NULL
               && free_map_allocate (1, &inode_sector)
-              && inode_create (inode_sector, initial_size, T_FILE)
-              && dir_add (dir, x, inode_sector));
+              && inode_create (inode_sector, initial_size, T_FILE));
+  if(success){
+    success = dir_add (dir, x, inode_sector);
+    if(!success){
+      struct inode_disk *inode = malloc(sizeof(struct inode_disk));
+      read_bcache(inode_sector, inode, 0, BLOCK_SECTOR_SIZE);
+      free_inode_data(inode);
+      free(inode);
+    }
+  }
  // printf("inode number %d\n",inode_sector);
   
   if (!success && inode_sector != 0) 

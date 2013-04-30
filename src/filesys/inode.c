@@ -11,7 +11,6 @@
 
 
 static uint32_t find_block(struct inode_disk *inode, block_sector_t sector, uint32_t file_sector);
-static void free_inode_data(struct inode_disk *inode);
 static void inode_change_length(struct inode *inode,off_t length);
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -580,7 +579,7 @@ find_block(struct inode_disk *inode, block_sector_t sector, uint32_t file_sector
 /* Frees all the sectors used by inode to use for storing its 
    data. It parses through all direct,indirect and doubly indirect 
    links to free the data blocks */
-static void
+void
 free_inode_data(struct inode_disk *inode)
 {
 

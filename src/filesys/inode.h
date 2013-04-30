@@ -62,4 +62,5 @@ bool inode_isremoved(struct inode *inode);
 bool inode_isDir(struct inode *inode);
 void inode_unlock (struct inode * inode);
 void inode_lock (struct inode * inode);
+void free_inode_data(struct inode_disk *inode);
 #endif /* filesys/inode.h */
