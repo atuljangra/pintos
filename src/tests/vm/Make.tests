@@ -3,8 +3,9 @@
 #page-merge-par page-merge-stk page-merge-mm 
 
 tests/vm_TESTS = $(addprefix tests/vm/,pt-grow-stack pt-grow-pusha	\
-pt-grow-bad pt-big-stk-obj pt-bad-addr page-shuffle page-linear pt-bad-read pt-write-code	\
-pt-write-code2 pt-grow-stk-sc mmap-read	\
+pt-grow-bad pt-big-stk-obj pt-bad-addr pt-bad-read pt-write-code	\
+pt-write-code2 pt-grow-stk-sc page-linear page-parallel page-merge-seq	\
+page-merge-par page-merge-stk page-merge-mm page-shuffle mmap-read	\
 mmap-close mmap-unmap mmap-overlap mmap-twice mmap-write mmap-exit	\
 mmap-shuffle mmap-bad-fd mmap-clean mmap-inherit mmap-misalign		\
 mmap-null mmap-over-code mmap-over-data mmap-over-stk mmap-remove	\
@@ -96,6 +97,7 @@ tests/vm/page-shuffle.output: TIMEOUT = 600
 tests/vm/mmap-shuffle.output: TIMEOUT = 600
 tests/vm/page-merge-seq.output: TIMEOUT = 600
 tests/vm/page-merge-par.output: TIMEOUT = 600
+tests/vm/page-merge-stk.output: TIMEOUT = 300
 
 tests/vm/zeros:
 	dd if=/dev/zero of=$@ bs=1024 count=6

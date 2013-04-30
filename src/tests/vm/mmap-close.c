@@ -24,4 +24,5 @@ test_main (void)
     fail ("read of mmap'd file reported bad data");
 
   munmap (map);
+  //printf("unmapped\n");
 }

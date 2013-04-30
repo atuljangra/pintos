@@ -43,14 +43,14 @@ sub common_checks {
     check_for_triple_fault ($run, @output);
     check_for_keyword ($run, "TIMEOUT", @output);
 
-    #~ fail "\u$run didn't start up properly: no \"Pintos booting\" message\n"
-      #~ if !grep (/Pintos booting with.*kB RAM\.\.\./, @output);
-    #~ fail "\u$run didn't start up properly: no \"Boot complete\" message\n"
-      #~ if !grep (/Boot complete/, @output);
-    #~ fail "\u$run didn't shut down properly: no \"Timer: # ticks\" message\n"
-      #~ if !grep (/Timer: \d+ ticks/, @output);
-    #~ fail "\u$run didn't shut down properly: no \"Powering off\" message\n"
-      #~ if !grep (/Powering off/, @output);
+    fail "\u$run didn't start up properly: no \"Pintos booting\" message\n"
+      if !grep (/Pintos booting with.*kB RAM\.\.\./, @output);
+    fail "\u$run didn't start up properly: no \"Boot complete\" message\n"
+      if !grep (/Boot complete/, @output);
+    fail "\u$run didn't shut down properly: no \"Timer: # ticks\" message\n"
+      if !grep (/Timer: \d+ ticks/, @output);
+    fail "\u$run didn't shut down properly: no \"Powering off\" message\n"
+      if !grep (/Powering off/, @output);
 }
 
 sub check_for_panic {

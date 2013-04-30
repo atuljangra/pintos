@@ -21,6 +21,8 @@ struct bcache_entry {
   bool accessed;                /* accessed bit corresponding to this entry */
   int read;                     /* number of processos reading on this thread*/
   int write;                    /* number of processes writing on this thread */
+  struct lock lock;               /* Lock */
+  bool valid;                    /* buffer's content valid or not */
 };
 
 /* Structure for maintaining all the readahead requests that needs

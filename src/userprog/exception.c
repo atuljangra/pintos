@@ -258,6 +258,7 @@ page_fault (struct intr_frame *f)
      */
     if (is_user_vaddr(t -> esp) && is_user_vaddr(fault_addr))
     {
+      //~ printf (" page fault fault_address %x, thread %d \n", fault_addr, t ->tid);
       sup_pt_entry = find_page_by_vaddr (pg_round_down(fault_addr));
       /*
        * Handling Stack growth with the esp of user and not the esp from the

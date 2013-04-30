@@ -246,50 +246,84 @@ int read (int fd, void* buffer, unsigned length)
 {
 //  lock_acquire(&file_lock);
   int result = 0;
+  int ret = 0;
   if (fd < 0 || (fd == STDOUT_FILENO && thread_current() -> fd_std_out) 
       || (fd == 2 && thread_current() -> fd_std_err))
   {
     result = -1;
     goto done;
   }
+  //~ if (length = PGSIZE)
+  //~ printf ("Read : fd %d length %d \n", fd, length);
+  int num_of_pages = length/PGSIZE;
+  int to_read = length;
+  int cur_read = 0;
+  int i = 0;
   bool valid;
   valid = validate_buffer (buffer, NULL, length, true);
-//  printf ("validated buffer \n");
   if (!valid)
   {
-   // lock_release (&file_lock);
-    thread_exit (-1);
+    //thread_exit (-1);
+    on_pgfault ();
     NOT_REACHED ();
   }
-  /* read from console */
-  if (fd == STDIN_FILENO && thread_current() -> fd_std_in)
+  void *kpage = palloc_get_page (PAL_ASSERT);
+  //~ printf ("Read : fd %d length %d no: %d\n", fd, length, num_of_pages);
+  for (i = 0; i <= num_of_pages; i++)
   {
-    unsigned i = 0;
-    while (i < length)
-      *(uint8_t *)(buffer + i) = input_getc();
-    result = length;
-    goto done;
-  }
-  struct fd_table_element *fd_elem = find_file (fd);
-  if (fd_elem == NULL)
-    goto done;
-  struct file * read = fd_elem -> file_name;
-  
-  if(inode_isDir(file_get_inode(read))){
-      result = -1;
-      goto done;
-  }
-  
-  if (read == NULL)
-  {
-      result = -1;
-      goto done;
-  }
-  result = file_read (read, buffer, length);
+    if (to_read / PGSIZE == 0)
+      to_read = to_read % PGSIZE;
 
+    if (to_read == 0)
+    {
+      //~ printf ("break in iteration %d \n", i);
+      //palloc_free_page (kpage);
+      //~ printf ("exiting %d res %d\n", fd, ret); 
+      break;
+    }
+    cur_read = (to_read > PGSIZE) ? PGSIZE : to_read;
+    // printf ("Reading : fd %d length %d cur %d  toread %d validating %d \n", fd, length, cur_read, to_read, (length - to_read));
+    if (fd == STDIN_FILENO && thread_current() -> fd_std_in)
+    {
+      unsigned i = 0;
+      while (i < cur_read)
+        *(uint8_t *)(kpage + i) = input_getc();
+       result = cur_read;
+      // continue;
+    }
+    else
+    {
+      struct fd_table_element *fd_elem = find_file (fd);
+      if (fd_elem == NULL)
+      {
+        palloc_free_page (kpage);
+        result = -1;
+        goto done;
+      }
+      struct file * read = fd_elem -> file_name;
+      if(read == NULL)
+      {
+        result = -1;
+        palloc_free_page (kpage);
+        goto done;
+      }
+      if(inode_isDir(file_get_inode(read)))
+      {
+        result = -1;
+        palloc_free_page (kpage);
+        goto done;
+      }
+      result = file_read (read, kpage, cur_read);
+      //~ printf ("Read %d from fd %d length%d\n", result, fd, length);
+    }
+    memcpy (buffer + (length - to_read), kpage, cur_read);
+    to_read = to_read - cur_read;
+    ret += result;
+  }
+  palloc_free_page (kpage);
   done:
-   // lock_release(&file_lock);
-  return result;
+  // lock_release(&file_lock);
+  return ret;
 }
 
 /* thread exit? is it that serious? */

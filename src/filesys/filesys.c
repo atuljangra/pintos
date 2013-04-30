@@ -42,7 +42,7 @@ filesys_init (bool format)
 void
 filesys_done (void) 
 {
-  print_my_ass ();
+  //~ print_my_ass ();
   flush_buffer_cache ();
   free_map_close ();
 }

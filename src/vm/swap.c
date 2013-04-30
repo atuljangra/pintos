@@ -31,7 +31,9 @@ swap_init ()
 bool
 swap_out (struct frame * frame)
 {
+  //~ printf ("in swap_out \n");
   bool swapped = false;
+  int addr = 0;
   if (has_swap())
   {
     lock_acquire (&bitmap_lock);
@@ -43,13 +45,17 @@ swap_out (struct frame * frame)
       int i = 0;
       for (i = 0; i < (PGSIZE/BLOCK_SECTOR_SIZE); i++)
       {
-        block_write (swap, block_idx  + i, ptov ((int)frame -> addr) + i * BLOCK_SECTOR_SIZE);
+        //~ printf ("writing to block i: %d  %d %d \n", i, block_idx + i, ptov ((int)frame -> addr) + i * BLOCK_SECTOR_SIZE);
+        addr = ptov ((int)frame -> addr) + i * BLOCK_SECTOR_SIZE;
+        block_write (swap, block_idx  + i, addr);
       }
       frame -> addr = (void *)pg_idx;
       frame -> in_swap = true;
       swapped = true;
     }
   }
+  //~ printf ("out swap_out \n\n");
+
   return swapped;
 }
 

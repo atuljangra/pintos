@@ -111,8 +111,10 @@ evict_frame (struct list * frame_list)
       /* Evict the frame to the swap. */
       /* Updates the boolean value in_swap and addr with the address of the frame in the swap. */
       else
+      {
+        //~ printf ("swap out karenge \n");
         swapped = swap_out (frame);
-      
+      }
       /* Swap was unsuccessful. Return the unmodified list. */
       if (!swapped)
       {

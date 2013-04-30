@@ -60,6 +60,7 @@ frame_alloc_lockless (enum palloc_flags flags)
     /* evict a frame if user pool is empty */
     else
     {
+//      printf ("Evicting a frame for use \n");
       frame = evict_frame (&frame_list);
     }
   }
