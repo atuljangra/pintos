@@ -20,6 +20,9 @@ both of them,
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
+  
+xv6 code listing.
+  
 
 		     INDEXED AND EXTENSIBLE FILES
 		     ============================
@@ -29,16 +32,55 @@ both of them,
 >> A1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+  enum
+    {
+      T_EMPTY,T_FILE,T_DIR
+    };
+  This to identify the type of the disk inode.  
 
+  /* On-disk inode.
+     Must be exactly BLOCK_SECTOR_SIZE bytes long. */
+  struct inode_disk
+    {
+      int type;                           /* type of inode. */   
+      off_t length;                       /* File size in bytes. */
+      unsigned magic;                     /* Magic number. */
+      block_sector_t addrs[NDIRECT+2];    /* Direct,Indirect and doubly indirect links */         
+    };
+    First NDIRECT entries (0 to NDIRECT-1) are direct links, addrs[NDIRECT]
+    is for indirect link and addrs[NDIRECT+1] is for doubly indirect link. 
+
+
+  /* In-memory inode. */
+  struct inode 
+    {
+      struct list_elem elem;              /* Element in inode list. */
+      block_sector_t sector;              /* Sector number of disk location. */
+      int open_cnt;                       /* Number of openers. */
+      bool removed;                       /* True if deleted, false otherwise. */
+      int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
+      //struct inode_disk data;           /* Inode content. */
+      struct lock lk;                     /* per-inode lock */
+    };
+
+  struct lock open_inode_lock;
+  This the lock on the list of open inodes to synchronize its access.
+  
 >> A2: What is the maximum size of a file supported by your inode
 >> structure?  Show your work.
-
+  No. of direct blocks = 123
+  No. of indirect blocks = 128
+  No. of doubly indirect blocks = 128*128
+  Maximum file size = (123 +128 + 128*128)/2 KB = 8.12 MB
+  
 ---- SYNCHRONIZATION ----
 
 >> A3: Explain how your code avoids a race if two processes attempt to
 >> extend a file at the same time.
+
 We acquire a lock on the inode that is being extended when a process wants
 to extend a file. Thus two process can never extend a file at the same time.
+
 
 >> A4: Suppose processes A and B both have file F open, both
 >> positioned at end-of-file.  If A reads and B writes F at the same
@@ -46,6 +88,7 @@ to extend a file. Thus two process can never extend a file at the same time.
 >> may not read data other than what B writes, e.g. if B writes
 >> nonzero data, A is not allowed to see all zeros.  Explain how your
 >> code avoids this race.
+
 We are updating the metadata(only length) of an inode after extending the file. Thus the
 length of the file is being changed when we have written to the file. Thus A
 would not be able to find out that the length of the file has increased until
@@ -57,10 +100,12 @@ B has written the metadata of the inode. Thus the above race would not occur.
 >> prevent forever another process from writing the file, and many
 >> processes writing to a file cannot prevent another process forever
 >> from reading the file.
+
 We are not blocking any reader or writer anytime. In the buffer cache, we are
 just updating the flags(read or write) when someone accesses a block for write/read.
 We are just blocking when a write is made to exten a file. Thus our design
 provides "fairness".
+
 ---- RATIONALE ----
 
 >> A6: Is your inode structure a multilevel index?  If so, why did you
@@ -69,19 +114,38 @@ provides "fairness".
 >> structure, and what advantages and disadvantages does your
 >> structure have, compared to a multilevel index?
 
+Yes, our inode structure is a multilevel index. We had to support files
+as large as 8MB size.Also the disk inode is constrained to be of 1 block
+size. Supporting 8MB files was not possible using only direct links.
+Doubly indirect link has to be used to support 8MB file size, but this
+slows down the overall file access so only one such indirect and doubly indirect 
+link is provided so that access time for small files is less.
+
 			    SUBDIRECTORIES
 			    ==============
-
 ---- DATA STRUCTURES ----
 
 >> B1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
+  enum
+    {
+      T_EMPTY,T_FILE,T_DIR
+    };
+  This to identify the type of the disk inode.  
 
 ---- ALGORITHMS ----
 
 >> B2: Describe your code for traversing a user-specified path.  How
 >> do traversals of absolute and relative paths differ?
+
+The code for traversing a user-specified path is similar to xv6.
+Given the path it is parsed to find the path of the first level 
+parent and the name of the child in the parent. The parent directory is
+looked for the prsence of the child.
+If the path begins with '/' then it is absolute otherwise it is relative.
+The difference is only in the starting dirctory for searching the entire
+path.
 
 ---- SYNCHRONIZATION ----
 
@@ -89,17 +153,30 @@ provides "fairness".
 >> only one of two simultaneous attempts to remove a single file
 >> should succeed, as should only one of two simultaneous attempts to
 >> create a file with the same name, and so on.
+
 We are acquiring a lock on the inode corresponding to the directory when we want to
 remove/create a file. Thus only one of the two processes succeeds.
+
 >> B5: Does your implementation allow a directory to be removed if it
 >> is open by a process or if it is in use as a process's current
 >> working directory?  If so, what happens to that process's future
 >> file system operations?  If not, how do you prevent it?
 
+Yes our implementation allow a directory to be removed if it is open by a 
+process or if it is in use as a process's current working directory.
+If a directory is removed then no changes can be done in that directory by 
+any process i.e. new files or directories cannot be created in it. 
+
 ---- RATIONALE ----
 
 >> B6: Explain why you chose to represent the current directory of a
 >> process the way you did.
+
+A directory pointer is saved in the thread structure of every process.
+When a new thread is created then the cwd of the parent is reopened 
+and pointer is saved in the child's thread structure.
+Current working directory is private to every process and it is easy to
+manage the current working directory if kept in the thread structure itself.
 
 			     BUFFER CACHE
 			     ============
@@ -214,6 +291,8 @@ access this
 
 >> C7: Describe a file workload likely to benefit from buffer caching,
 >> and workloads likely to benefit from read-ahead and write-behind.
+Tests like syn-read and syn write, where we are simultaneously reading and writing to the
+same file multiple times are havily benefitted from buffer caching, read ahead and write-behind.
 
 			   SURVEY QUESTIONS
 			   ================

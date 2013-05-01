@@ -223,7 +223,7 @@ dir_remove (struct dir *dir, const char *name)
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
-  /* TODO lock is also acquired in write_at :-(*/
+
   inode_lock (dir -> inode);
   /* Find directory entry. */
   if (!lookup (dir, name, &e, &ofs))
@@ -286,7 +286,6 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 bool
 dir_chdir(const char *name)
 {
-  //printf("changing directory %s\n",name);
   ASSERT(dir_isDir(thread_current()->cwd));
  
   
@@ -305,7 +304,6 @@ dir_chdir(const char *name)
   cur->cwd = dir;
   free(temp);
   ASSERT(dir_isDir(thread_current()->cwd));
-  //printf("done changing directory\n");
   return true;
 }
 
@@ -328,7 +326,7 @@ dir_mkdir(const char *name)
     success = false;
     goto done;
   }
-  //struct dir *dir = dir_open_root ();
+
   success = ( dir != NULL
               && free_map_allocate (1, &inode_sector)
               && dir_create (inode_sector, 16));
@@ -397,14 +395,13 @@ direntry_size(void)
 static char*
 skipelem(char *path, char **name1)
 {
- // printf("length %d,%s\n",strlen(path),path);
+
   char *s;
   int len;
   char *name = *name1;
   while(*path == '/')
     path++;
   if(*path == 0){
-   // printf("returning path\n");
     *name = 0;
     return 0;
   }
@@ -433,9 +430,6 @@ skipelem(char *path, char **name1)
 static struct inode*
 get_name(char *path, int nameiparent, char *name)
 {
-
-  
- // printf("getting inode %s\n",path);
   struct dir *dir;
   struct inode *ip = NULL, *next = NULL ;
   struct thread *t = thread_current();
@@ -454,8 +448,6 @@ get_name(char *path, int nameiparent, char *name)
   
   ip = dir_get_inode(dir);
   while((path = skipelem(path, &name)) != 0){
-   // printf("path is %s and name is %s\n",path,name);
-
     if(!inode_isDir(ip)){
       dir_close(dir);
       inode_close(ip);
@@ -468,11 +460,8 @@ get_name(char *path, int nameiparent, char *name)
       return ip;
     }
     if((!dir_lookup(dir_open(ip), name, &next)) ){
-      //printf("file not found %s \n",name);
-     
-    dir_close(dir);
-    inode_close(ip);
-    
+      dir_close(dir);
+      inode_close(ip);    
       return NULL;
     }
     if(ip != dir->inode)
@@ -485,18 +474,13 @@ get_name(char *path, int nameiparent, char *name)
     return NULL;
   }
   if(name == 0 || (*name == 0 && next == NULL)){
-   // printf("input name empty\n");
     dir_close(dir);
     inode_close(ip);
     return NULL;
   }
   
   dir_close(dir);
-  //printf("returning ip\n");
   return ip;
-  
-
-
 }
 
 struct inode*

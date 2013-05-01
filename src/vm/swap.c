@@ -33,7 +33,7 @@ swap_out (struct frame * frame)
 {
   //~ printf ("in swap_out \n");
   bool swapped = false;
-  int addr = 0;
+  void * addr = 0;
   if (has_swap())
   {
     lock_acquire (&bitmap_lock);

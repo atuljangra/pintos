@@ -48,8 +48,6 @@ void init_bcache ()
       temp -> valid = false;
       lock_init (&temp -> lock); 
       bcache[i * sector_per_page+j] = temp;
-      // printf ("Initialized %d with i: %d, j: %d pointing to %x %d , bcache: %x \n", i * sector_per_page + j, i, j, temp, temp, bcache[ i * sector_per_page+j]);
-      // free (temp);
     }
   }
 
@@ -59,40 +57,6 @@ void init_bcache ()
   // create the bitmap
   bcache_table = bitmap_create (BUFFER_CACHE_SIZE);
 }
-/*
-int get_sector (block_sector_t blockid, int flag)
-{
-  lock_acquire (&bcache_lock);
-  int entry = find_sector (blockid, flag);
-  if (entry != -1)
-  {
-    printf ("get: got the entry for sector %s \n", blockid);
-    if (flag == FLAG_READ)
-      bcache[i] -> read++;
-    if (flag == FLAG_WRITE)
-      bcache[i] -> write++;
-    bcache [i] -> valid = false;
-    lock_release (&bcache_lock);
-    return entry;
-  }
-  // entry was not present int the buffer cache, thus trying to add a new entry
-
-  size_t free_entry = bitmap_scan (bcache_table, 0, 1, false);
-
-  // we have a free entry, thus use that.
-  if (free_entry != BITMAP_ERROR)
-  {
-    
-    lock_release (&bcache_lock);
-    // read from the block
-    block_read (fs_device, blockid, bcache[free_entry] -> kaddr);
-    
-
-  }
-
-}
-*/
-
 // Finds an entry corresponding to blockid
 // flag: either 0(read) or 1(write), increase the corresponding entry of block.
 // to avoid race conditions, as done in xv6
@@ -158,55 +122,34 @@ size_t add_bcache (block_sector_t blockid, int flag)
   // If there is no such entry then we need to evict
   if (free_entry == BITMAP_ERROR)
   {
-    // printf ("evicting \t");
     int evicted = evict_bcache ();
+    
     block_write (fs_device, bcache[evicted] -> bsector, bcache[evicted] -> kaddr);
-    //~ void *dummy = malloc (BLOCK_SECTOR_SIZE);
-    //~ memcpy (dummy, bcache [evicted] -> kaddr, BLOCK_SECTOR_SIZE);
+
     bcache[evicted] -> dirty = false;
     bcache[evicted] -> accessed = false;
     bcache[evicted] -> bsector = blockid;
     bcache[evicted] -> valid = false;
+    
     // Mark the corresponding entry in bitmap table
-    // bitmap_set (bcache_table, evicted, true);
     if (flag == FLAG_READ)
       bcache[evicted] -> read ++;
     if (flag == FLAG_WRITE)
       bcache[evicted] -> write ++;
     lock_release (&bcache_lock);
-    // read from the disk
-    
+
+    // read from the disk    
     block_read (fs_device, blockid, bcache[evicted] -> kaddr);
+
     // mark the buffer as valid
     lock_acquire (&bcache[evicted] -> lock);
     bcache[evicted] -> valid = true;
     lock_release (&bcache[evicted] -> lock);
-    return evicted;
     
+    return evicted;
   }
 
   return -1;
-//~ 
-  //~ ASSERT (free_entry != BITMAP_ERROR);
-  // printf ("Adding bcache block %d %x kaddr %x %d \n", blockid, blockid,  bcache[free_entry] -> kaddr,  bcache[free_entry] -> kaddr);
-  //~ // bcache[free_entry] -> kaddr = (void *)calloc (1, BLOCK_SECTOR_SIZE);
-  //~ block_read (fs_device, blockid, bcache[free_entry] -> kaddr);
-//~ //  hex_dump (0, bcache[free_entry] -> kaddr, BLOCK_SECTOR_SIZE, true);
-  // printf ("add cache: read from disk %s \n", bcache[free_entry] -> kaddr);
-  //~ bcache[free_entry] -> dirty = false;
-  //~ bcache[free_entry] -> accessed = false;
-  //~ bcache[free_entry] -> bsector = blockid;
-//~ 
-  //~ // Mark the corresponding entry in bitmap table
-  //~ bitmap_set (bcache_table, free_entry, true);
-//~ 
-  //~ if (flag == FLAG_READ)
-    //~ bcache[free_entry] -> read ++;
-  //~ if (flag == FLAG_WRITE)
-    //~ bcache[free_entry] -> write ++;
-//~ 
-  //~ //lock_release (&bcache_lock);
-  //~ return free_entry;
 }
 
 // reads from a block, which is in cache, and stores it in buffer.
@@ -214,28 +157,15 @@ void read_bcache (block_sector_t blockid, void *buffer, off_t offset, int size)
 {
   // sanitychecks
   ASSERT (offset < BLOCK_SECTOR_SIZE);
-  //~ printf ("Reading bcache at %d, offset %d, size %d \n", blockid, offset, size);
 
   lock_acquire(&bcache_lock);
   // flag is 0 as it is a read access
   int entry = find_sector (blockid, FLAG_READ);
 
-  //~ printf ("bcache read: entry is %d \n", entry);
-
   // If no entry is there, then add the cache and increase the reader.
   if (entry == -1)
   {
     entry = add_bcache (blockid, FLAG_READ);
-//    lock_release(&bcache_lock);
-    // bcache[entry] -> read++;
-    //~ printf ("bcache read: new entry is %d \n", entry);
-
-    // If we are just getting the data block for this entry from the disk, then
-    // we need to add the next block to the global readahead list, i.e. we need
-    // to request a readahead.
-    // IF this is not the last block, then request readahead
-    //if (blockid < block_size (fs_device) - 1)
-      //request_readahead (blockid + 1);
   }
   else
   {  
@@ -249,7 +179,6 @@ void read_bcache (block_sector_t blockid, void *buffer, off_t offset, int size)
 
   // Copying contents into the requested buffer
   memcpy (buffer, (bcache[entry] -> kaddr + offset), size);
-  //~ printf ("sector %d buffer %s odd: %s\n", blockid,  buffer, (bcache[entry] -> kaddr + offset));
   lock_acquire(&bcache[entry] -> lock);
   bcache[entry] -> accessed = true;
   bcache[entry] -> read--;
@@ -262,25 +191,14 @@ void write_bcache (block_sector_t blockid, void *buffer, int offset, int size)
 {
   //sanity checks
   ASSERT (offset < BLOCK_SECTOR_SIZE);
-  // printf ("Writing bcache at %d, offset %d, size %d buffer %s \n", blockid, offset, size, buffer);
 
   lock_acquire(&bcache_lock);
-  // flag is 1 as it is a write access
   int entry = find_sector (blockid, FLAG_WRITE);
 
-  //~ printf ("bcache write : entry is %d \n", entry);
   // If no entry is there, then add the cache and increase the reader.
   if (entry == -1)
   {
-    //~ printf ("adding while writing \t");
     entry = add_bcache (blockid, FLAG_WRITE);
-    // Register as writer process
-    // bcache[entry] -> write++;i
-    // lock_release(&bcache_lock);
-
-    //TODO add comment
-    //if (blockid < block_size (fs_device) - 1)
-      //request_readahead (blockid + 1);
   }
   else
   {
@@ -326,8 +244,6 @@ void writeback (int index)
 }
 
 // Evict cache to make place for another entry into the cache
-// TODO: Currently using second change algorithm, as clock was creating problem
-// TODO: Change this to use clock
 int evict_bcache ()
 {
   int i;
@@ -335,7 +251,6 @@ int evict_bcache ()
   
   while (evicted == -1)
   {
-    // printf (".");
     for (i = 0; i < BUFFER_CACHE_SIZE; i++)
       // is the entry completely free
       if (bcache[i] -> write == 0 && bcache[i] -> read == 0)
@@ -343,8 +258,6 @@ int evict_bcache ()
         if (bcache[i] -> accessed == false)
         {
           evicted = i;
-          // writeback (evicted);
-          // bitmap_set (bcache_table, evicted, false);
           return evicted;
         }
         else
