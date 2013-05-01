@@ -1,0 +1,240 @@
+       	 +-------------------------+
+		     |		      CSL373	       |
+		     | PROJECT 4: FILE SYSTEMS |
+		     |	   DESIGN DOCUMENT     |
+		     +-------------------------+
+
+---- GROUP ----
+
+>> Fill in the names and email addresses of your group members.
+
+Vivek Mittal < cs5100301@cse.iitd.ernet.in>
+Atul Jangra <cs5100277@cse.iitd.ernet.in>
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+We have implemented the filesys with sharing of executables and mmap files.
+VM of both the groups have been taken into account and all tests are passing on
+both of them,
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+
+		     INDEXED AND EXTENSIBLE FILES
+		     ============================
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+>> A2: What is the maximum size of a file supported by your inode
+>> structure?  Show your work.
+
+---- SYNCHRONIZATION ----
+
+>> A3: Explain how your code avoids a race if two processes attempt to
+>> extend a file at the same time.
+We acquire a lock on the inode that is being extended when a process wants
+to extend a file. Thus two process can never extend a file at the same time.
+
+>> A4: Suppose processes A and B both have file F open, both
+>> positioned at end-of-file.  If A reads and B writes F at the same
+>> time, A may read all, part, or none of what B writes.  However, A
+>> may not read data other than what B writes, e.g. if B writes
+>> nonzero data, A is not allowed to see all zeros.  Explain how your
+>> code avoids this race.
+We are updating the metadata(only length) of an inode after extending the file. Thus the
+length of the file is being changed when we have written to the file. Thus A
+would not be able to find out that the length of the file has increased until
+B has written the metadata of the inode. Thus the above race would not occur.
+
+>> A5: Explain how your synchronization design provides "fairness".
+>> File access is "fair" if readers cannot indefinitely block writers
+>> or vice versa.  That is, many processes reading from a file cannot
+>> prevent forever another process from writing the file, and many
+>> processes writing to a file cannot prevent another process forever
+>> from reading the file.
+We are not blocking any reader or writer anytime. In the buffer cache, we are
+just updating the flags(read or write) when someone accesses a block for write/read.
+We are just blocking when a write is made to exten a file. Thus our design
+provides "fairness".
+---- RATIONALE ----
+
+>> A6: Is your inode structure a multilevel index?  If so, why did you
+>> choose this particular combination of direct, indirect, and doubly
+>> indirect blocks?  If not, why did you choose an alternative inode
+>> structure, and what advantages and disadvantages does your
+>> structure have, compared to a multilevel index?
+
+			    SUBDIRECTORIES
+			    ==============
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+---- ALGORITHMS ----
+
+>> B2: Describe your code for traversing a user-specified path.  How
+>> do traversals of absolute and relative paths differ?
+
+---- SYNCHRONIZATION ----
+
+>> B4: How do you prevent races on directory entries?  For example,
+>> only one of two simultaneous attempts to remove a single file
+>> should succeed, as should only one of two simultaneous attempts to
+>> create a file with the same name, and so on.
+We are acquiring a lock on the inode corresponding to the directory when we want to
+remove/create a file. Thus only one of the two processes succeeds.
+>> B5: Does your implementation allow a directory to be removed if it
+>> is open by a process or if it is in use as a process's current
+>> working directory?  If so, what happens to that process's future
+>> file system operations?  If not, how do you prevent it?
+
+---- RATIONALE ----
+
+>> B6: Explain why you chose to represent the current directory of a
+>> process the way you did.
+
+			     BUFFER CACHE
+			     ============
+
+---- DATA STRUCTURES ----
+
+>> C1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+1.
+This is the structure corresponding to each node in the bcache array;
+struct bcache_entry {
+  block_sector_t bsector;       /* Block Sector */
+  void *kaddr;                  /* Kernel page corresponding to this entry */
+  bool dirty;                   /* Is this entry dirty */
+  bool accessed;                /* accessed bit corresponding to this entry */
+  int read;                     /* number of processos reading on this thread*/
+  int write;                    /* number of processes writing on this thread */
+};
+
+2.
+/* Structure for maintaining all the readahead requests that needs
+ * to be handled by readahead thread
+ */
+struct readahead_entry {
+  block_sector_t bsector;       /* Block sector */
+  struct list_elem elem;         /* list element hanger */
+};
+
+3.
+This is the actual bcache array that is used to maintain the buffer caches.
+struct bcache_entry * bcache[BUFFER_CACHE_SIZE];
+4.
+This is a bitmap corresponding to each entry in the bcache array. This is used to make
+iterating the entire list for free entry faster.
+struct bitmap * bcache_table;
+
+5.
+This is the readahead list where all the requests for the readahead are maintained.
+struct list readahead_list;
+---- ALGORITHMS ----
+
+>> C2: Describe how your cache replacement algorithm chooses a cache
+>> block to evict.
+I've implemented the clock algorithm with some added heuristics.
+
+   while (evicted == -1)
+  {
+    // printf (".");
+    for (i = 0; i < BUFFER_CACHE_SIZE; i++)
+      // is the entry completely free
+      if (bcache[i] -> write == 0 && bcache[i] -> read == 0)
+      {
+        if (bcache[i] -> accessed == false)
+        {
+          evicted = i;
+          writeback (evicted);
+          bitmap_set (bcache_table, evicted, false);
+          return;
+        }
+        else
+          bcache[i] -> accessed = false;
+      }
+  }
+
+Firstly we loop through the entire list and find if we have a possible victim for eviction.
+A possible victim will be the one whose read and write are 0, i.e. no one is reading or writing from that buffer cache, and whose accessed is set to zero. If we have found a
+buffer cache whose readers and writers are 0, but it is accessed, then we set it's
+accessed to false and then we proceed forward. In this way, if no one is accessing it, then
+it's accessed would still be false on second iteration, and we can  evict it.
+
+>> C3: Describe your implementation of write-behind.
+I've implemented write behind with timer_sleep(). I've a separate thread which take care
+of the flushing.
+  uint64_t sleep_time = 1000;
+
+  while (true)
+  {
+    timer_sleep (sleep_time);
+    // Flush the buffer cache table 
+    flush_buffer_cache ();
+    //~ printf ("flushed the bcache table \n");
+  }
+It sleeps for some time using timer_sleep and then wakes up to flush the entire buffer.
+This ensure the write-behind technique.
+
+>> C4: Describe your implementation of read-ahead.
+I've implemented a requesting system in read-ahead. I've a separate thread running which does
+the job of reading ahead.
+When we want to readahead something, we add an entry to the global readahead queue, and
+cond_signal the readahead thread. This read_ahead thread was cond_wait while the list was
+empty. Now the list is not empty thus, we can fulfill the readahead request by bringing
+the requested sector into the buffer cache.
+
+---- SYNCHRONIZATION ----
+
+>> C5: When one process is actively reading or writing data in a
+>> buffer cache block, how are other processes prevented from evicting
+>> that block?
+If one process is reading/writing a buffer cache block, then it must have
+increased the read/write flag of that buffer cache. And while evicting I check
+if the read/write flags are 0 or not.If they are non-zero then that buffer is not
+evicted.
+ 
+>> C6: During the eviction of a block from the cache, how are other
+>> processes prevented from attempting to access the block?
+TODO PROBLEM 
+Eviction of a block is done only while adding a new block, when a block is not present
+in the buffer cache initially. While evicting a buffer cache block, I've held the b_cache lock in add function ( where evict function is called).Thus no one else can access that block.
+access this  
+---- RATIONALE ----
+
+>> C7: Describe a file workload likely to benefit from buffer caching,
+>> and workloads likely to benefit from read-ahead and write-behind.
+
+			   SURVEY QUESTIONS
+			   ================
+
+Answering these questions is optional, but it will help us improve the
+course in future quarters.  Feel free to tell us anything you
+want--these questions are just to spur your thoughts.  You may also
+choose to respond anonymously in the course evaluations at the end of
+the quarter.
+
+>> In your opinion, was this assignment, or any one of the three problems
+>> in it, too easy or too hard?  Did it take too long or too little time?
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+
+>> Do you have any suggestions for the TAs to more effectively assist
+>> students in future quarters?
+
+>> Any other comments?
